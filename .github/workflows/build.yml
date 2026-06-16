@@ -45,25 +45,44 @@ jobs:
           -p:DebugType=none
           -o publish/bootstrapper
 
-      # ─────────────────────────────────────────────────────────────
-      #  ПОДПИСЬ (SignPath Foundation) — включить после онбординга.
-      #  Вставить ЗДЕСЬ, между publish и сборкой zip, чтобы в пакет
-      #  попал уже подписанный Launcher.App.exe (и BL-modern.exe):
+      # ═══════════════════════════════════════════════════════════════
+      #  ПОДПИСЬ ЧЕРЕЗ SIGNPATH FOUNDATION
+      #  Включить ПОСЛЕ одобрения OSS-заявки (https://signpath.org/).
+      #  Раскомментируй блок ниже и подставь 4 значения из дашборда
+      #  SignPath + добавь секрет SIGNPATH_API_TOKEN в настройках репо.
+      #  Эти шаги идут МЕЖДУ publish и "Assemble self-update package",
+      #  чтобы в zip/Release попали уже ПОДПИСАННЫЕ exe.
+      # ───────────────────────────────────────────────────────────────
       #
-      #  - name: Sign with SignPath
+      #  - name: Upload unsigned exes for signing
+      #    id: unsigned
+      #    uses: actions/upload-artifact@v4
+      #    with:
+      #      name: unsigned
+      #      path: |
+      #        publish/launcher/Launcher.App.exe
+      #        publish/bootstrapper/BL-modern.exe
+      #
+      #  - name: Submit to SignPath and get signed artifact
       #    uses: signpath/github-action-submit-signing-request@v1
       #    with:
       #      api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-      #      organization-id: '<ваш-organization-id>'
-      #      project-slug: 'BL-modernlauncher'
-      #      signing-policy-slug: 'release-signing'
-      #      artifact-configuration-slug: 'launcher'
-      #      github-artifact-id: '<id артефакта>'
+      #      organization-id: 'ЗАПОЛНИТЬ-organization-id'        # GUID из URL дашборда
+      #      project-slug: 'ЗАПОЛНИТЬ-project-slug'              # напр. bl-modernlauncher
+      #      signing-policy-slug: 'ЗАПОЛНИТЬ-policy-slug'        # напр. release-signing
+      #      artifact-configuration-slug: 'ЗАПОЛНИТЬ-artifact-config-slug'  # напр. launcher
+      #      github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
       #      wait-for-completion: true
+      #      output-artifact-directory: 'signed'
       #
-      #  Точные slug'и берутся из проекта SignPath после регистрации.
-      #  Док: https://about.signpath.io/documentation/github-actions
-      # ─────────────────────────────────────────────────────────────
+      #  - name: Replace unsigned exes with signed ones
+      #    shell: pwsh
+      #    run: |
+      #      Copy-Item signed/Launcher.App.exe publish/launcher/Launcher.App.exe -Force
+      #      Copy-Item signed/BL-modern.exe    publish/bootstrapper/BL-modern.exe -Force
+      #
+      #  Док экшена: https://github.com/signpath/github-action-submit-signing-request
+      # ═══════════════════════════════════════════════════════════════
 
       - name: Assemble self-update package
         shell: pwsh
