@@ -1,0 +1,100 @@
+name: build-release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # нужно для создания Release по тегу
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish launcher (single-file, self-contained)
+        shell: pwsh
+        run: >
+          dotnet publish Launcher.App/Launcher.App.csproj -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=none
+          -o publish/launcher
+
+      - name: Publish bootstrapper (single-file, self-contained)
+        shell: pwsh
+        run: >
+          dotnet publish Launcher.Bootstrapper/Launcher.Bootstrapper.csproj -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=none
+          -o publish/bootstrapper
+
+      # ─────────────────────────────────────────────────────────────
+      #  ПОДПИСЬ (SignPath Foundation) — включить после онбординга.
+      #  Вставить ЗДЕСЬ, между publish и сборкой zip, чтобы в пакет
+      #  попал уже подписанный Launcher.App.exe (и BL-modern.exe):
+      #
+      #  - name: Sign with SignPath
+      #    uses: signpath/github-action-submit-signing-request@v1
+      #    with:
+      #      api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #      organization-id: '<ваш-organization-id>'
+      #      project-slug: 'BL-modernlauncher'
+      #      signing-policy-slug: 'release-signing'
+      #      artifact-configuration-slug: 'launcher'
+      #      github-artifact-id: '<id артефакта>'
+      #      wait-for-completion: true
+      #
+      #  Точные slug'и берутся из проекта SignPath после регистрации.
+      #  Док: https://about.signpath.io/documentation/github-actions
+      # ─────────────────────────────────────────────────────────────
+
+      - name: Assemble self-update package
+        shell: pwsh
+        run: |
+          $stage = "publish/stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item publish/launcher/Launcher.App.exe (Join-Path $stage 'Launcher.App.exe')
+          $xml = [xml](Get-Content Launcher.App/Launcher.App.csproj)
+          $ver = ($xml.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1).ToString().Trim()
+          [System.IO.File]::WriteAllText((Join-Path $stage 'launcher.version'), $ver)
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath publish/TerraFirmaGregModern-launcher-release.zip -Force
+          $hash = (Get-FileHash publish/TerraFirmaGregModern-launcher-release.zip -Algorithm SHA256).Hash
+          "launcher.version = $ver"
+          "zip SHA256 = $hash"
+          Set-Content publish/SHA256.txt $hash
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-win-x64
+          path: |
+            publish/launcher/Launcher.App.exe
+            publish/bootstrapper/BL-modern.exe
+            publish/TerraFirmaGregModern-launcher-release.zip
+            publish/SHA256.txt
+
+      - name: Create GitHub Release (on tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publish/bootstrapper/BL-modern.exe
+            publish/TerraFirmaGregModern-launcher-release.zip
+            publish/SHA256.txt

@@ -20,25 +20,23 @@
     </EmbeddedResource>
     <Resource Include="background.png" />
     <Resource Include="Sprite-0001.png" />
-    <Resource Include="..\release\launcher\Sprite-0002.png">
-      <Link>Sprite-0002.png</Link>
-    </Resource>
+    <Resource Include="Sprite-0002.png" />
     <EmbeddedResource Include="Assets\servers.dat">
       <LogicalName>Launcher.App.Defaults.servers.dat</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="..\modpack-manifest.json">
       <LogicalName>Launcher.App.Defaults.modpack-manifest.json</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\release\launcher\скриншоты\*.png">
+    <EmbeddedResource Include="Screenshots\*.png">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\release\launcher\скриншоты\*.jpg">
+    <EmbeddedResource Include="Screenshots\*.jpg">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\release\launcher\скриншоты\*.jpeg">
+    <EmbeddedResource Include="Screenshots\*.jpeg">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\release\launcher\скриншоты\*.webp">
+    <EmbeddedResource Include="Screenshots\*.webp">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
