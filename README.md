@@ -54,6 +54,16 @@ dotnet publish .\Launcher.Bootstrapper\Launcher.Bootstrapper.csproj -c Release -
 Лаунчер собирает анонимную техническую телеметрию (её можно отключить в настройках).
 Подробности — в [PRIVACY.md](PRIVACY.md).
 
+## Дисклеймер / Disclaimer
+
+TerraFirmaGreg-Modern — сторонний комьюнити-модпак, созданный не нами и не связанный с этим
+проектом. Этот репозиторий содержит **только исходный код лаунчера**; модпак, моды и файлы игры
+Minecraft в него не входят и скачиваются во время работы.
+
+TerraFirmaGreg-Modern is a third-party community modpack, not authored by or affiliated with this
+project. This repository contains **only the launcher source code**; it does not include the
+modpack, mods, or Minecraft game files, which are downloaded at runtime.
+
 ## Лицензия
 
 [MIT](LICENSE)
