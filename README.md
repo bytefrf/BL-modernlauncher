@@ -39,3 +39,22 @@ dotnet build .\MinecraftLauncher.slnx
 dotnet publish .\Launcher.App\Launcher.App.csproj -c Release -r win-x64 --self-contained false
 dotnet publish .\Launcher.Bootstrapper\Launcher.Bootstrapper.csproj -c Release -r win-x64 --self-contained false
 ```
+
+## Загрузка
+
+Готовые сборки — на странице [Releases](https://github.com/bytefrf/BL-modernlauncher/releases).
+
+## Подпись кода (Code signing)
+
+Сборки для Windows подписываются сертификатом, предоставленным
+[SignPath Foundation](https://signpath.org/) (бесплатная подпись кода для open-source проектов).
+
+## Конфиденциальность
+
+Лаунчер собирает анонимную техническую телеметрию (её можно отключить в настройках).
+Подробности — в [PRIVACY.md](PRIVACY.md).
+
+## Лицензия
+
+[MIT](LICENSE)
+
