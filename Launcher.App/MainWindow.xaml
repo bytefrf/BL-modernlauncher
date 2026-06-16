@@ -1,0 +1,582 @@
+﻿<Window x:Class="Launcher.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Forge Launcher"
+        Icon="/Sprite-0001.png"
+        Height="820"
+        Width="1360"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded"
+        StateChanged="Window_StateChanged"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#0E1612" />
+        <SolidColorBrush x:Key="TitleBarBackgroundBrush" Color="#F3131C18" />
+        <SolidColorBrush x:Key="TitleBarBorderBrush" Color="#325345" />
+        <SolidColorBrush x:Key="WindowIconBackgroundBrush" Color="#294036" />
+        <SolidColorBrush x:Key="WindowIconBorderBrush" Color="#6F9F86" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#18261F" />
+        <SolidColorBrush x:Key="PanelAltBrush" Color="#21342A" />
+        <SolidColorBrush x:Key="CardBrush" Color="#D01A2821" />
+        <SolidColorBrush x:Key="CardAltBrush" Color="#CC111C19" />
+        <SolidColorBrush x:Key="StrokeBrush" Color="#5E8A73" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#C9D6C8" />
+        <SolidColorBrush x:Key="TextBrush" Color="#FFF7EA" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#E0B24F" />
+        <SolidColorBrush x:Key="AccentDarkBrush" Color="#B9802A" />
+        <SolidColorBrush x:Key="TextBoxBackgroundBrush" Color="#E1141F1A" />
+        <SolidColorBrush x:Key="TextBoxBorderBrush" Color="#5B8A72" />
+        <SolidColorBrush x:Key="SoftButtonBackgroundBrush" Color="#355545" />
+        <SolidColorBrush x:Key="SoftButtonBorderBrush" Color="#6B9A7F" />
+        <SolidColorBrush x:Key="SoftButtonHoverBrush" Color="#456D5A" />
+        <SolidColorBrush x:Key="SoftButtonPressedBrush" Color="#294236" />
+        <SolidColorBrush x:Key="SocialButtonBackgroundBrush" Color="#3E6452" />
+        <SolidColorBrush x:Key="SocialButtonBorderBrush" Color="#7DA78E" />
+        <SolidColorBrush x:Key="SocialButtonHoverBrush" Color="#507D67" />
+        <SolidColorBrush x:Key="IconButtonBackgroundBrush" Color="#355545" />
+        <SolidColorBrush x:Key="IconButtonBorderBrush" Color="#6B9A7F" />
+        <SolidColorBrush x:Key="IconButtonHoverBrush" Color="#456D5A" />
+        <SolidColorBrush x:Key="TitleBarButtonHoverBrush" Color="#344E41" />
+        <SolidColorBrush x:Key="TitleBarButtonPressedBrush" Color="#23372D" />
+        <SolidColorBrush x:Key="PrimaryButtonBorderBrush" Color="#F5D07A" />
+        <SolidColorBrush x:Key="PrimaryButtonHoverBrush" Color="#F0C96A" />
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="13,8" />
+            <Setter Property="Background" Value="{DynamicResource TextBoxBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBoxBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="TitleBarButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SoftButton" TargetType="Button">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="18,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SoftButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="16"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryButtonBorderBrush}" />
+            <Setter Property="Foreground" Value="#251907" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="18"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource PrimaryButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource AccentDarkBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SocialButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+            <Setter Property="Height" Value="56" />
+            <Setter Property="Padding" Value="22,0" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SocialButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SocialButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="20"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="16"
+                                                  ShadowDepth="0"
+                                                  Color="#5A000000"
+                                                  Opacity="0.45" />
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SocialButtonHoverBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource SocialButtonBorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource IconButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource IconButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="14"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource IconButtonHoverBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource IconButtonBorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemedScrollPageButton" TargetType="RepeatButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="10" />
+            <Setter Property="MinWidth" Value="10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Border CornerRadius="5" Margin="3,2" Opacity="0.45"
+                                    Background="{DynamicResource CardAltBrush}" />
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource ThemedScrollPageButton}" Command="ScrollBar.PageUpCommand" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource ThemedScrollPageButton}" Command="ScrollBar.PageDownCommand" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="ThumbControl" Background="{DynamicResource StrokeBrush}">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border CornerRadius="5" Margin="3,0"
+                                                        Background="{TemplateBinding Background}" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbControl" Property="Background" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter Property="Width" Value="Auto" />
+                                <Setter Property="MinWidth" Value="0" />
+                                <Setter Property="Height" Value="10" />
+                                <Setter Property="MinHeight" Value="10" />
+                                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="46" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Margin="14,0,10,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Width="24" Height="24" CornerRadius="6" Background="{DynamicResource WindowIconBackgroundBrush}" BorderBrush="{DynamicResource WindowIconBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
+                    <Image Width="18" Height="18" Source="/Sprite-0001.png" Stretch="Uniform" />
+                </Border>
+                <TextBlock x:Name="WindowTitleTextBlock" Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Text="TerraFirmaGreg Modern" />
+                <Button Grid.Column="3" Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" Content="-" />
+                <Button Grid.Column="5" Style="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="X" />
+            </Grid>
+        </Border>
+
+        <Grid x:Name="MainBackgroundGrid" Grid.Row="1">
+        <Rectangle x:Name="BackgroundLayerA"
+                   Opacity="1">
+            <Rectangle.Fill>
+                <ImageBrush x:Name="BackgroundImageBrushA"
+                            Stretch="UniformToFill"
+                            AlignmentX="Center"
+                            AlignmentY="Center" />
+            </Rectangle.Fill>
+        </Rectangle>
+        <Rectangle x:Name="BackgroundLayerB"
+                   Opacity="0">
+            <Rectangle.Fill>
+                <ImageBrush x:Name="BackgroundImageBrushB"
+                            Stretch="UniformToFill"
+                            AlignmentX="Center"
+                            AlignmentY="Center" />
+            </Rectangle.Fill>
+        </Rectangle>
+
+        <Rectangle Fill="#6C101712" />
+        <Rectangle>
+            <Rectangle.Fill>
+                <RadialGradientBrush Center="0.18,0.08" RadiusX="0.95" RadiusY="0.85">
+                    <GradientStop Color="#244A3D2B" Offset="0" />
+                    <GradientStop Color="#6A101712" Offset="0.68" />
+                    <GradientStop Color="#B3111914" Offset="1" />
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+
+        <Grid Margin="22,16,22,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="10" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="10" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border CornerRadius="30" Background="Transparent" BorderThickness="0" Padding="26,22,26,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="385" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel VerticalAlignment="Top" Margin="0,6,0,0">
+                        <TextBlock x:Name="ServerTitleTextBlock" FontSize="32" FontWeight="Bold" Text="TerraFirmaGreg Modern" />
+                        <TextBlock x:Name="ServerSubtitleTextBlock" Margin="0,6,0,0" FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Получаем статус серверов…" />
+
+                        <ItemsControl x:Name="ServerListPanel" Margin="0,8,0,0" Width="380" HorizontalAlignment="Left">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,8"
+                                            CornerRadius="14"
+                                            Background="{DynamicResource CardBrush}"
+                                            BorderBrush="{DynamicResource StrokeBrush}"
+                                            BorderThickness="1"
+                                            Padding="14,9">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextBrush}" />
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                                                    <Border CornerRadius="9"
+                                                            Background="{DynamicResource CardAltBrush}"
+                                                            Padding="8,3"
+                                                            VerticalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                                     Fill="{Binding StatusBrush}" />
+                                                            <TextBlock Text="{Binding StatusText}" Margin="6,0,0,0"
+                                                                       FontSize="10" FontWeight="SemiBold"
+                                                                       Foreground="{Binding StatusBrush}"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Detail}" Margin="9,0,0,0" FontSize="11"
+                                                               Foreground="{StaticResource MutedBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1" Margin="12,0,0,0"
+                                                        VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding PlayersText}" FontSize="23" FontWeight="Bold"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Text="{Binding PlayersCaption}" FontSize="10"
+                                                           Margin="0,-1,0,0"
+                                                           HorizontalAlignment="Right"
+                                                           Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Border Margin="0,10,0,0"
+                                Width="380"
+                                HorizontalAlignment="Left"
+                                CornerRadius="18"
+                                Background="{DynamicResource PanelAltBrush}"
+                                BorderBrush="{DynamicResource StrokeBrush}"
+                                BorderThickness="1"
+                                Padding="14,10">
+                            <StackPanel>
+                                <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}" Text="Имя игрока" />
+                                <TextBox x:Name="UsernameTextBox" Margin="0,6,0,0" Text="Player" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                            <Button Width="126" Margin="0,0,14,0" Style="{StaticResource SocialButton}" Click="WebsiteButton_Click" Content="Сайт" />
+                            <Button Width="126" Margin="0,0,14,0" Style="{StaticResource SocialButton}" Click="BoostyButton_Click" Content="Boosty" />
+                            <Button Width="126" Style="{StaticResource SocialButton}" Click="DiscordButton_Click" Content="Discord" />
+                        </StackPanel>
+
+                    </StackPanel>
+
+                    <Grid Grid.Column="2" VerticalAlignment="Top" Margin="0,-28,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="8" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,0,18,0">
+                            <Button x:Name="SupportButton"
+                                    Width="132"
+                                    Margin="0,0,12,0"
+                                    Style="{StaticResource SoftButton}"
+                                    Click="SupportButton_Click"
+                                    Content="Поддержка"
+                                    ToolTip="Написать в поддержку" />
+                            <Button x:Name="SettingsButton"
+                                    Style="{StaticResource IconButton}"
+                                    Click="SettingsButton_Click"
+                                    ToolTip="Настройки">
+                                <Image Width="24"
+                                       Height="24"
+                                       Source="/Sprite-0002.png"
+                                       Stretch="Uniform" />
+                            </Button>
+                        </StackPanel>
+
+                        <Border Grid.Row="2"
+                                Height="320"
+                                CornerRadius="24"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource StrokeBrush}"
+                                BorderThickness="1"
+                                Padding="18">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock FontSize="16" FontWeight="SemiBold" Text="Новости" />
+                                <Border x:Name="NewsImageBorder"
+                                        Grid.Row="1"
+                                        Margin="0,12,0,0"
+                                        Height="96"
+                                        CornerRadius="16"
+                                        Background="#284136"
+                                        BorderBrush="#5F8B75"
+                                        BorderThickness="1"
+                                        Visibility="Collapsed">
+                                    <Image x:Name="NewsImage" Stretch="UniformToFill" />
+                                </Border>
+                                <TextBlock x:Name="NewsTitleTextBlock"
+                                           Grid.Row="2"
+                                           Margin="0,12,0,0"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           Text="Новости загружаются..." />
+                                <TextBlock x:Name="NewsDateTextBlock"
+                                           Grid.Row="3"
+                                           Margin="0,6,0,0"
+                                           FontSize="10"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           Text="" />
+                                <ScrollViewer Grid.Row="4"
+                                              Margin="0,10,0,0"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              CanContentScroll="False"
+                                              PanningMode="VerticalOnly">
+                                    <TextBlock x:Name="NewsDescriptionTextBlock"
+                                               FontSize="12"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Лаунчер получает новости с сайта при запуске." />
+                                </ScrollViewer>
+                                <Button x:Name="OpenNewsButton"
+                                        Grid.Row="5"
+                                        Margin="0,12,0,0"
+                                        Height="36"
+                                        Style="{StaticResource SoftButton}"
+                                        Click="OpenNewsButton_Click"
+                                        Content="Открыть новость"
+                                        Visibility="Collapsed" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="6" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock x:Name="FooterTextBlock"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource MutedBrush}"
+                           Text="Готово к работе" />
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <ProgressBar x:Name="LauncherProgressBar"
+                                 Height="16"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 VerticalAlignment="Center"
+                                 Foreground="{StaticResource AccentBrush}"
+                                 Background="#13211C" />
+                    <Button x:Name="PlayButton" Grid.Column="2" Width="220" Style="{StaticResource PrimaryButton}" Click="PlayButton_Click" Content="Играть" />
+                </Grid>
+            </Grid>
+        </Grid>
+        </Grid>
+    </Grid>
+</Window>

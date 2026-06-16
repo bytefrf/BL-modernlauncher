@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "launcher": {
+    "title": "BL-modern TFGM",
+    "newsUrl": "https://bl-modern.ru/api/rss.php",
+    "supportUrl": "https://discord.gg/FpV9bRggvt",
+    "version": "1.0.65",
+    "packageUrl": "https://bl-modern.ru/download/TerraFirmaGregModern-launcher-release.zip",
+    "sha256": "49C6147BEB9889BF38EB7AA286B02C5146F4807B4679AA103325D6B57FD12900"
+  },
+  "modpack": {
+    "id": "terrafirmagreg-modern",
+    "name": "TerraFirmaGreg Modern",
+    "version": "0.12.8-flat",
+    "minecraftVersion": "1.20.1",
+    "loader": "forge",
+    "loaderVersion": "47.4.10",
+    "description": "TerraFirmaGreg Modern modpack for Minecraft 1.20.1",
+    "archiveUrl": "https://example.com/modpack/TerraFirmaGreg-Modern.zip",
+    "archiveFileName": "TerraFirmaGreg-Modern.zip",
+    "archiveSha256": "",
+    "archiveSize": 0,
+    "stripPrefix": ".minecraft/",
+    "clientRequired": true,
+    "serverPack": false
+  },
+  "install": {
+    "root": "%AppData%\\ForgeLauncher",
+    "cleanBeforeInstall": false,
+    "stripPrefixRequired": true,
+    "preservePaths": [
+      "saves",
+      "screenshots",
+      "options.txt",
+      "servers.dat",
+      "resourcepacks",
+      "shaderpacks",
+      ".launcher",
+      "xaero",
+      "local",
+      "XaeroWaypoints",
+      "XaeroWorldMap",
+      "XaeroWaypoints_BACKUP240807"
+    ]
+  },
+  "runtime": {
+    "javaVersion": 17,
+    "javaExecutable": "",
+    "javaRuntimeUrl": "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk",
+    "javaRuntimeFallbackUrls": [
+      "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse?project=jdk"
+    ],
+    "minecraftVersionManifestUrl": "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+    "minecraftVersionJsonUrl": "",
+    "minecraftClientUrl": "",
+    "minecraftAssetIndexUrl": "",
+    "minecraftLibrariesBaseUrl": "",
+    "minecraftAssetsBaseUrl": "",
+    "mainVersionId": "1.20.1-forge-47.4.10",
+    "requiresInstalledRuntime": false,
+    "autoInstallForge": true,
+    "forgeInstallerUrl": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.4.10/forge-1.20.1-47.4.10-installer.jar",
+    "forgeInstallerSha256": "1912760B4CB6B803D8A826DE603C9076B1DA71EC2765E9A1F8C1CA78F65278E3",
+    "forgeInstallerSize": 6078070,
+    "memoryMbDefault": 4096,
+    "memoryMbMin": 2048,
+    "memoryMbMax": 12288,
+    "jvmArgs": [
+      "-XX:+UseG1GC"
+    ],
+    "gameArgs": []
+  },
+  "updates": {
+    "mode": "archive",
+    "allowDowngrade": false,
+    "forceReinstall": false
+  },
+  "integrity": {
+    "required": true,
+    "hashAlgorithm": "sha256"
+  },
+  "ui": {
+    "backgroundImageUrl": "",
+    "logoUrl": "",
+    "accentColor": "#2A7A4B"
+  }
+}

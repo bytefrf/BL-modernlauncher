@@ -1,0 +1,470 @@
+<Window x:Class="Launcher.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Настройки лаунчера"
+        Icon="/Sprite-0001.png"
+        Width="820"
+        Height="660"
+        MinWidth="760"
+        MinHeight="600"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#08110F" />
+        <SolidColorBrush x:Key="TitleBarBackgroundBrush" Color="#F207100E" />
+        <SolidColorBrush x:Key="TitleBarBorderBrush" Color="#20372E" />
+        <SolidColorBrush x:Key="WindowIconBackgroundBrush" Color="#1B3028" />
+        <SolidColorBrush x:Key="WindowIconBorderBrush" Color="#365C4D" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#111C19" />
+        <SolidColorBrush x:Key="PanelAltBrush" Color="#16251F" />
+        <SolidColorBrush x:Key="CardBrush" Color="#D9111C19" />
+        <SolidColorBrush x:Key="CardAltBrush" Color="#CC111C19" />
+        <SolidColorBrush x:Key="StrokeBrush" Color="#274239" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#9DB4A9" />
+        <SolidColorBrush x:Key="TextBrush" Color="#F4F7F1" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#D7A84D" />
+        <SolidColorBrush x:Key="AccentDarkBrush" Color="#B9802A" />
+        <SolidColorBrush x:Key="TextBoxBackgroundBrush" Color="#091310" />
+        <SolidColorBrush x:Key="TextBoxBorderBrush" Color="#315245" />
+        <SolidColorBrush x:Key="SoftButtonBackgroundBrush" Color="#243B32" />
+        <SolidColorBrush x:Key="SoftButtonBorderBrush" Color="#395F4F" />
+        <SolidColorBrush x:Key="SoftButtonHoverBrush" Color="#2F4D41" />
+        <SolidColorBrush x:Key="SoftButtonPressedBrush" Color="#1D3129" />
+        <SolidColorBrush x:Key="TitleBarButtonHoverBrush" Color="#263B33" />
+        <SolidColorBrush x:Key="TitleBarButtonPressedBrush" Color="#182821" />
+        <SolidColorBrush x:Key="PrimaryButtonBorderBrush" Color="#F0C76C" />
+        <SolidColorBrush x:Key="PrimaryButtonHoverBrush" Color="#F0C96A" />
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Background" Value="{DynamicResource TextBoxBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBoxBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
+        <Style x:Key="ThemeListBoxStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Margin" Value="0,0,0,10" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Root"
+                                            Background="{DynamicResource SoftButtonBackgroundBrush}"
+                                            BorderBrush="{DynamicResource SoftButtonBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="16"
+                                            Padding="14,12">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource PanelAltBrush}" />
+                                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                            <Setter TargetName="Root" Property="BorderThickness" Value="2" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemeSwatchBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style x:Key="TitleBarButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SoftButton" TargetType="Button">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SoftButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="15"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryButtonBorderBrush}" />
+            <Setter Property="Foreground" Value="#1A1307" />
+        </Style>
+
+        <Style x:Key="LauncherSliderThumb" TargetType="Thumb">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid>
+                            <Ellipse Fill="{DynamicResource AccentBrush}" Stroke="{DynamicResource PrimaryButtonBorderBrush}" StrokeThickness="2" />
+                            <Ellipse Margin="6" Fill="#1A1307" Opacity="0.55" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MemorySliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="IsSnapToTickEnabled" Value="True" />
+            <Setter Property="TickFrequency" Value="512" />
+            <Setter Property="SmallChange" Value="512" />
+            <Setter Property="LargeChange" Value="1024" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="34">
+                            <Border Height="8"
+                                    CornerRadius="4"
+                                    Background="#091310"
+                                    BorderBrush="#315245"
+                                    BorderThickness="1"
+                                    VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Opacity="0" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource LauncherSliderThumb}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Opacity="0" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="46" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Margin="14,0,10,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Width="24" Height="24" CornerRadius="6" Background="{DynamicResource WindowIconBackgroundBrush}" BorderBrush="{DynamicResource WindowIconBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
+                    <Image Width="18" Height="18" Source="/Sprite-0001.png" Stretch="Uniform" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Text="Настройки лаунчера" />
+                <Button Grid.Column="3" Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" Content="-" />
+                <Button Grid.Column="5" Style="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.Background>
+                <RadialGradientBrush Center="0.15,0.08" RadiusX="0.85" RadiusY="0.75">
+                    <GradientStop Color="#233F34" Offset="0" />
+                    <GradientStop Color="#0B1713" Offset="0.58" />
+                    <GradientStop Color="#07100E" Offset="1" />
+                </RadialGradientBrush>
+            </Grid.Background>
+
+            <Grid Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="18" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="18" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border CornerRadius="26" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" Padding="24">
+                <StackPanel>
+                    <TextBlock FontSize="30" FontWeight="Bold" Text="Настройки" />
+                    <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Параметры сохраняются локально на компьютере и применяются при установке, обновлении и запуске Minecraft." />
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" PreviewMouseWheel="SettingsScrollViewer_PreviewMouseWheel">
+                <StackPanel>
+                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Производительность" />
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Foreground="{StaticResource MutedBrush}" Text="Память, МБ" />
+                                        <TextBlock x:Name="MemoryValueTextBlock" Grid.Column="1" FontWeight="SemiBold" Text="4096" />
+                                    </Grid>
+                                    <Slider x:Name="MemorySlider" Style="{StaticResource MemorySliderStyle}" ValueChanged="MemorySlider_ValueChanged" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Оформление" />
+                            <TextBlock Margin="0,6,0,16" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Text="Выбери тему интерфейса для лаунчера и окна настроек." />
+                            <TextBlock Margin="0,0,0,10" Foreground="{DynamicResource MutedBrush}" Text="Тема" />
+                            <ListBox x:Name="ThemeListBox"
+                                     Style="{StaticResource ThemeListBoxStyle}"
+                                     SelectionChanged="ThemeListBox_SelectionChanged">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Width="356">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="12" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <Border Style="{StaticResource ThemeSwatchBorderStyle}"
+                                                        Background="{Binding Accent}" />
+                                                <Border Style="{StaticResource ThemeSwatchBorderStyle}"
+                                                        Margin="6,0,0,0"
+                                                        Background="{Binding Panel}" />
+                                                <Border Style="{StaticResource ThemeSwatchBorderStyle}"
+                                                        Margin="6,0,0,0"
+                                                        Background="{Binding Card}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock FontSize="15"
+                                                           FontWeight="SemiBold"
+                                                           Text="{Binding DisplayName}" />
+                                                <TextBlock Margin="0,4,0,0"
+                                                           Foreground="{DynamicResource MutedBrush}"
+                                                           Text="{Binding Id}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Установка" />
+                            <TextBlock Margin="0,6,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Если путь пустой, используется путь из манифеста сборки." />
+
+                            <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="Путь установки сборки" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="InstallPathTextBox" />
+                                <Button Grid.Column="2" Width="120" Style="{StaticResource SoftButton}" Click="BrowseInstallPathButton_Click" Content="Выбрать" />
+                            </Grid>
+
+                            <TextBlock Margin="0,14,0,6" Foreground="{StaticResource MutedBrush}" Text="Путь по умолчанию" />
+                            <TextBlock x:Name="DefaultInstallPathTextBlock" TextWrapping="Wrap" Text="-" />
+
+                            <StackPanel Margin="0,16,0,0" Orientation="Horizontal">
+                                <Button Width="160"
+                                        Margin="0,0,10,0"
+                                        Style="{StaticResource SoftButton}"
+                                        Click="OpenInstallFolderButton_Click"
+                                        Content="Открыть папку" />
+                                <Button Width="140"
+                                        Margin="0,0,10,0"
+                                        Style="{StaticResource SoftButton}"
+                                        Click="OpenLatestLogButton_Click"
+                                        Content="latest.log" />
+                                <Button Width="210"
+                                        Style="{StaticResource SoftButton}"
+                                        Click="VerifyFilesButton_Click"
+                                        Content="Проверить целостность" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Java и запуск" />
+                            <TextBlock Margin="0,6,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Java можно не указывать, тогда будет использован путь из манифеста. Дополнительные аргументы нужны только для тонкой настройки." />
+
+                            <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="Путь к javaw.exe / java.exe" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="JavaPathTextBox" />
+                                <Button Grid.Column="2" Width="120" Style="{StaticResource SoftButton}" Click="BrowseJavaPathButton_Click" Content="Выбрать" />
+                            </Grid>
+
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+                                    <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="JVM аргументы" />
+                                    <TextBox x:Name="JvmArgsTextBox" Height="92" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="Игровые аргументы" />
+                                    <TextBox x:Name="GameArgsTextBox" Height="92" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Окно игры" />
+                            <CheckBox x:Name="CustomResolutionCheckBox" Margin="0,14,0,12" Foreground="{StaticResource TextBrush}" Content="Запускать Minecraft с выбранным разрешением" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="Ширина" />
+                                    <TextBox x:Name="ResolutionWidthTextBox" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Margin="0,0,0,6" Foreground="{StaticResource MutedBrush}" Text="Высота" />
+                                    <TextBox x:Name="ResolutionHeightTextBox" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Анонимная статистика" />
+                            <TextBlock Margin="0,6,0,12"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="Помочь улучшить лаунчер: отправлять анонимную статистику запусков и ошибок. Без имени игрока и без личных данных." />
+                            <CheckBox x:Name="TelemetryEnabledCheckBox"
+                                      Foreground="{StaticResource TextBrush}"
+                                      Content="Отправлять анонимную статистику" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="1" Width="130" Style="{StaticResource SoftButton}" Click="ResetButton_Click" Content="Сбросить" />
+                <Button Grid.Column="3" Width="120" Style="{StaticResource SoftButton}" Click="CancelButton_Click" Content="Отмена" />
+                <Button Grid.Column="5" Width="150" Style="{StaticResource PrimaryButton}" Click="SaveButton_Click" Content="Сохранить" />
+            </Grid>
+        </Grid>
+        </Grid>
+    </Grid>
+</Window>

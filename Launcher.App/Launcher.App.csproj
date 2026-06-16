@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Version>1.0.65</Version>
+    <ApplicationIcon>launcher.ico</ApplicationIcon>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="launcher.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="launcher.ico">
+      <LogicalName>Launcher.App.launcher.ico</LogicalName>
+    </EmbeddedResource>
+    <Resource Include="background.png" />
+    <Resource Include="Sprite-0001.png" />
+    <Resource Include="..\release\launcher\Sprite-0002.png">
+      <Link>Sprite-0002.png</Link>
+    </Resource>
+    <EmbeddedResource Include="Assets\servers.dat">
+      <LogicalName>Launcher.App.Defaults.servers.dat</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\modpack-manifest.json">
+      <LogicalName>Launcher.App.Defaults.modpack-manifest.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\release\launcher\скриншоты\*.png">
+      <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\release\launcher\скриншоты\*.jpg">
+      <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\release\launcher\скриншоты\*.jpeg">
+      <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\release\launcher\скриншоты\*.webp">
+      <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="artifacts\**\*.cs" />
+    <EmbeddedResource Remove="artifacts\**\*" />
+    <Page Remove="artifacts\**\*" />
+    <Resource Remove="artifacts\**\*" />
+    <None Remove="artifacts\**\*" />
+  </ItemGroup>
+
+</Project>

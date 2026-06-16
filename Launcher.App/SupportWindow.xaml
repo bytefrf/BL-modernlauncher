@@ -1,0 +1,235 @@
+<Window x:Class="Launcher.App.SupportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Поддержка"
+        Icon="/Sprite-0001.png"
+        Width="720"
+        Height="680"
+        MinWidth="620"
+        MinHeight="560"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Loaded="Window_Loaded"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#08110F" />
+        <SolidColorBrush x:Key="TitleBarBackgroundBrush" Color="#F207100E" />
+        <SolidColorBrush x:Key="TitleBarBorderBrush" Color="#20372E" />
+        <SolidColorBrush x:Key="WindowIconBackgroundBrush" Color="#1B3028" />
+        <SolidColorBrush x:Key="WindowIconBorderBrush" Color="#365C4D" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#111C19" />
+        <SolidColorBrush x:Key="PanelAltBrush" Color="#172620" />
+        <SolidColorBrush x:Key="CardBrush" Color="#D9111C19" />
+        <SolidColorBrush x:Key="CardAltBrush" Color="#CC111C19" />
+        <SolidColorBrush x:Key="StrokeBrush" Color="#315245" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#B6C8BD" />
+        <SolidColorBrush x:Key="TextBrush" Color="#F4F7F1" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#D7A84D" />
+        <SolidColorBrush x:Key="AccentDarkBrush" Color="#B9802A" />
+        <SolidColorBrush x:Key="TextBoxBackgroundBrush" Color="#E008110F" />
+        <SolidColorBrush x:Key="TextBoxBorderBrush" Color="#315245" />
+        <SolidColorBrush x:Key="SoftButtonBackgroundBrush" Color="#243B32" />
+        <SolidColorBrush x:Key="SoftButtonBorderBrush" Color="#395F4F" />
+        <SolidColorBrush x:Key="SoftButtonHoverBrush" Color="#2F4D41" />
+        <SolidColorBrush x:Key="SoftButtonPressedBrush" Color="#1D3129" />
+        <SolidColorBrush x:Key="TitleBarButtonHoverBrush" Color="#263B33" />
+        <SolidColorBrush x:Key="TitleBarButtonPressedBrush" Color="#182821" />
+        <SolidColorBrush x:Key="PrimaryButtonBorderBrush" Color="#F0C76C" />
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource TextBoxBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TextBoxBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
+        <Style x:Key="TitleBarButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource TitleBarButtonPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SoftButton" TargetType="Button">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SoftButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                CornerRadius="15"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PrimaryButtonBorderBrush}" />
+            <Setter Property="Foreground" Value="#1A1307" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="46" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Margin="14,0,10,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Width="24" Height="24" CornerRadius="6" Background="{DynamicResource WindowIconBackgroundBrush}" BorderBrush="{DynamicResource WindowIconBorderBrush}" BorderThickness="1" VerticalAlignment="Center">
+                    <Image Width="18" Height="18" Source="/Sprite-0001.png" Stretch="Uniform" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" Text="Поддержка" />
+                <Button Grid.Column="3" Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" Content="-" />
+                <Button Grid.Column="5" Style="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="X" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.Background>
+                <RadialGradientBrush Center="0.15,0.08" RadiusX="0.85" RadiusY="0.75">
+                    <GradientStop Color="#233F34" Offset="0" />
+                    <GradientStop Color="#0B1713" Offset="0.58" />
+                    <GradientStop Color="#07100E" Offset="1" />
+                </RadialGradientBrush>
+            </Grid.Background>
+
+            <Grid Margin="22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="14" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="14" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock FontSize="24" FontWeight="Bold" Text="Поддержка лаунчера" />
+                            <TextBlock x:Name="TicketInfoTextBlock" Margin="0,8,0,0" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Text="Загрузка диалога..." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Width="110" Style="{StaticResource SoftButton}" Click="RefreshButton_Click" Content="Обновить" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="2" Background="{DynamicResource CardAltBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="14">
+                    <ScrollViewer x:Name="MessagesScrollViewer" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="MessagesItemsControl">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,10"
+                                            Padding="12"
+                                            CornerRadius="12"
+                                            Background="{DynamicResource PanelAltBrush}"
+                                            BorderBrush="{DynamicResource StrokeBrush}"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource AccentBrush}" Text="{Binding Header}" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" Text="{Binding Message}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+
+                <StackPanel Grid.Row="4">
+                    <TextBlock Foreground="{DynamicResource MutedBrush}" Margin="4,0,0,6" Text="Email для ответа поддержки (необязательно)" />
+                    <TextBox x:Name="EmailTextBox"
+                             Height="42"
+                             MaxLength="160"
+                             ToolTip="Если указан email, поддержка сможет продублировать ответ письмом." />
+                </StackPanel>
+
+                <TextBox x:Name="MessageTextBox"
+                         Grid.Row="6"
+                         Height="92"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MaxLength="4000"
+                         ToolTip="Опиши проблему: что нажал, что должно было произойти, что произошло вместо этого." />
+
+                <Grid Grid.Row="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusTextBlock" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
+                    <Button Grid.Column="1" Width="150" Style="{StaticResource PrimaryButton}" Click="SendButton_Click" Content="Отправить" />
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

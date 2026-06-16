@@ -1,0 +1,58 @@
+# ───────────────────────────────────────────────
+#  BL-modern TFGM Launcher — публичный репозиторий
+#  Всё, что НЕ относится к исходникам лаунчера, исключено.
+# ───────────────────────────────────────────────
+
+# --- Сборочные артефакты .NET ---
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+
+# --- Большие / непубличные папки проекта ---
+release/
+mc-client-build/
+test-server/
+server/
+downloads/
+local-run/
+.codex-build/
+.dotnet-home/
+
+# --- Бэкенд (держим в ОТДЕЛЬНОМ приватном репозитории) ---
+*.php
+backend/
+
+# --- Секреты и сертификаты (НИКОГДА не коммитить) ---
+*.pfx
+*.p12
+*.cer
+*.snk
+*.pem
+*.key
+config.php
+secrets.json
+appsettings.*.json
+
+# --- Крупные бинарники / архивы / рантаймы ---
+*.zip
+*.jar
+*.exe
+*.dll
+*.pdb
+java/
+minecraft/
+forge/
+
+# --- Логи и временное ---
+*.log
+*.tmp
+launcher-crash.log
+launcher.version
+
+# --- ОС ---
+Thumbs.db
+Desktop.ini
+.DS_Store

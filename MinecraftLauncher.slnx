@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Launcher.App/Launcher.App.csproj" />
+  <Project Path="Launcher.Bootstrapper/Launcher.Bootstrapper.csproj" />
+</Solution>

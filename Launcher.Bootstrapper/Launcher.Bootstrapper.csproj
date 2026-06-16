@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Version>1.0.65</Version>
+    <ApplicationIcon>launcher.ico</ApplicationIcon>
+    <AssemblyName>BL-modern</AssemblyName>
+    <RootNamespace>Launcher.Bootstrapper</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\launcher.config.json">
+      <LogicalName>Launcher.Bootstrapper.launcher.config.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

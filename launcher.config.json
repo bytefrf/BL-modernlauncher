@@ -1,0 +1,11 @@
+{
+  "launcherName": "TerraFirmaGreg Modern",
+  "manifestUrl": "",
+  "modpackManifestUrl": "https://bl-modern.ru/download/modpack-manifest.json",
+  "modpackArchiveUrl": "",
+  "modpackVersion": "",
+  "modpackArchiveSha256": "",
+  "distributionRoot": "%AppData%\\ForgeLauncher",
+  "launcherExecutable": "Launcher.App.exe",
+  "launcherVersionFile": "launcher.version"
+}
