@@ -86,7 +86,54 @@ public sealed class ArchiveInstallService(HttpClient httpClient)
         return InstallAsync(configuration, null, new UserSettings(), progress, cancellationToken);
     }
 
+    private const int ArchiveDownloadAttempts = 4;
+    private static readonly TimeSpan ArchiveRetryDelay = TimeSpan.FromSeconds(3);
+
+    // Обёртка с повторами: обрыв сети (SocketException/IOException/HttpRequestException) больше не валит установку —
+    // докачка продолжается с места обрыва (через Range), до 4 попыток.
     private async Task DownloadArchiveAsync(string url, string archivePath, long expectedSize, IProgress<FileSyncProgress>? progress, CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= ArchiveDownloadAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await DownloadArchiveCoreAsync(url, archivePath, expectedSize, progress, cancellationToken);
+                return;
+            }
+            catch (Exception ex) when (IsTransientDownloadError(ex, cancellationToken))
+            {
+                lastError = ex;
+                progress?.Report(new FileSyncProgress(0, $"Обрыв сети, повтор загрузки {attempt}/{ArchiveDownloadAttempts}", ex.Message));
+                if (attempt < ArchiveDownloadAttempts)
+                {
+                    await Task.Delay(ArchiveRetryDelay, cancellationToken);
+                }
+            }
+        }
+
+        throw new IOException(
+            "Не удалось скачать архив модпака из-за обрывов сети. Загрузка продолжится с места обрыва при следующем запуске.",
+            lastError);
+    }
+
+    private static bool IsTransientDownloadError(Exception exception, CancellationToken cancellationToken)
+    {
+        if (exception is OperationCanceledException)
+        {
+            return !cancellationToken.IsCancellationRequested;
+        }
+
+        if (exception is HttpRequestException or IOException or System.Net.Sockets.SocketException)
+        {
+            return true;
+        }
+
+        return exception.InnerException is not null && IsTransientDownloadError(exception.InnerException, cancellationToken);
+    }
+
+    private async Task DownloadArchiveCoreAsync(string url, string archivePath, long expectedSize, IProgress<FileSyncProgress>? progress, CancellationToken cancellationToken)
     {
         var tempPath = archivePath + ".download";
 

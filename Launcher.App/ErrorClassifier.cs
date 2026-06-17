@@ -90,6 +90,19 @@ public static class ErrorClassifier
 
         if (exception is IOException ioException)
         {
+            if (IsNetworkIoError(ioException))
+            {
+                return Create(
+                    "Ошибка сети",
+                    "Соединение с сервером оборвалось во время загрузки. Обычно это нестабильный интернет, VPN/Zapret, прокси или HTTPS-фильтр антивируса.",
+                    [
+                        "Проверь стабильность интернета и попробуй ещё раз.",
+                        "Отключи VPN/прокси или HTTPS-фильтрацию антивируса, если они включены.",
+                        "Лаунчер продолжит загрузку с места обрыва при повторном запуске."
+                    ],
+                    exception);
+            }
+
             return Create(
                 "Не удалось записать файл",
                 IsDiskFull(ioException)
@@ -212,6 +225,24 @@ public static class ErrorClassifier
     {
         return exception.InnerException is SocketException socketException
             && socketException.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain;
+    }
+
+    // IOException, вызванный обрывом TCP-соединения (SocketException 10054 и т.п.), — это сеть, а не запись на диск.
+    private static bool IsNetworkIoError(IOException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SocketException)
+            {
+                return true;
+            }
+        }
+
+        var text = exception.ToString();
+        return text.Contains("transport connection", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("Удаленный хост", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("принудительно разорвал", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsDiskFull(IOException exception)
