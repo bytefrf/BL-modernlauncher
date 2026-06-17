@@ -19,13 +19,22 @@ public sealed class JavaRuntimeInstallService(HttpClient httpClient)
         CancellationToken cancellationToken)
     {
         var javaPath = JavaValidationService.GetManagedConsoleJavaPath(installRoot);
-        if (File.Exists(javaPath))
+        var runtimeRoot = JavaValidationService.GetManagedJavaHome(installRoot);
+
+        if (IsJavaRuntimeComplete(runtimeRoot))
         {
             progress?.Report(new FileSyncProgress(100, "Локальная Java 17 уже установлена", null));
             return javaPath;
         }
 
-        var runtimeRoot = JavaValidationService.GetManagedJavaHome(installRoot);
+        // java.exe мог остаться от прерванной распаковки, но без lib\jvm.cfg JRE нерабочая
+        // (Forge installer падает с "could not open jvm.cfg"). Сносим неполную и ставим заново.
+        if (Directory.Exists(runtimeRoot))
+        {
+            progress?.Report(new FileSyncProgress(0, "Обнаружена неполная Java 17 — переустанавливаю", null));
+            try { Directory.Delete(runtimeRoot, true); } catch { /* перезапишется при копировании */ }
+        }
+
         var cacheRoot = Path.Combine(installRoot, ".launcher", "cache");
         Directory.CreateDirectory(cacheRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(runtimeRoot)!);
@@ -39,7 +48,16 @@ public sealed class JavaRuntimeInstallService(HttpClient httpClient)
         try
         {
             progress?.Report(new FileSyncProgress(90, "Распаковка локальной Java 17", null));
-            ZipFile.ExtractToDirectory(archivePath, stagingRoot, true);
+            try
+            {
+                ZipFile.ExtractToDirectory(archivePath, stagingRoot, true);
+            }
+            catch (InvalidDataException)
+            {
+                // Кэшированный архив битый/недокачан — удаляем, чтобы при следующем запуске скачать заново.
+                try { File.Delete(archivePath); } catch { }
+                throw new InvalidDataException("Архив Java 17 повреждён. Он будет перекачан при следующем запуске лаунчера.");
+            }
 
             var extractedJava = Directory
                 .EnumerateFiles(stagingRoot, "java.exe", SearchOption.AllDirectories)
@@ -62,9 +80,13 @@ public sealed class JavaRuntimeInstallService(HttpClient httpClient)
             }
         }
 
-        if (!File.Exists(javaPath))
+        if (!IsJavaRuntimeComplete(runtimeRoot))
         {
-            throw new FileNotFoundException($"Локальная Java 17 не была установлена: {javaPath}");
+            // Архив оказался неполным (нет jvm.cfg и т.п.). Чистим кэш-архив, чтобы следующая попытка скачала заново.
+            try { if (File.Exists(archivePath)) File.Delete(archivePath); } catch { }
+            throw new FileNotFoundException(
+                $"Java 17 установлена не полностью (нет bin\\java.exe или lib\\jvm.cfg): {runtimeRoot}. " +
+                "Архив будет перекачан при следующем запуске.");
         }
 
         progress?.Report(new FileSyncProgress(100, "Локальная Java 17 установлена", $"Java 17 установлена: {javaPath}"));
@@ -79,8 +101,15 @@ public sealed class JavaRuntimeInstallService(HttpClient httpClient)
     {
         if (File.Exists(archivePath) && new FileInfo(archivePath).Length > 0)
         {
-            progress?.Report(new FileSyncProgress(85, $"Архив Java 17 уже загружен: {FormatBytes(new FileInfo(archivePath).Length)}", null));
-            return;
+            // Доверяем кэшу только если это валидный zip — иначе распаковка даст неполную Java.
+            if (CanOpenZip(archivePath))
+            {
+                progress?.Report(new FileSyncProgress(85, $"Архив Java 17 уже загружен: {FormatBytes(new FileInfo(archivePath).Length)}", null));
+                return;
+            }
+
+            progress?.Report(new FileSyncProgress(5, "Кэш Java 17 повреждён — качаю заново", null));
+            try { File.Delete(archivePath); } catch { }
         }
 
         var urls = BuildRuntimeUrls(runtime);
@@ -220,6 +249,33 @@ public sealed class JavaRuntimeInstallService(HttpClient httpClient)
             var targetPath = Path.Combine(targetDirectory, Path.GetRelativePath(sourceDirectory, file));
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.Copy(file, targetPath, true);
+        }
+    }
+
+    // JRE считается полной только при наличии и java.exe, и lib\jvm.cfg (без него JVM не стартует).
+    private static bool IsJavaRuntimeComplete(string javaHome)
+    {
+        if (string.IsNullOrWhiteSpace(javaHome))
+        {
+            return false;
+        }
+
+        var javaExe = Path.Combine(javaHome, "bin", "java.exe");
+        var jvmCfg = Path.Combine(javaHome, "lib", "jvm.cfg");
+        return File.Exists(javaExe) && File.Exists(jvmCfg);
+    }
+
+    private static bool CanOpenZip(string archivePath)
+    {
+        try
+        {
+            using var archive = ZipFile.OpenRead(archivePath);
+            _ = archive.Entries.Count;
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 

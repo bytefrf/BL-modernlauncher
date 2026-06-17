@@ -22,28 +22,34 @@ public sealed class LauncherSelfUpdateService(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
 
             var totalBytes = response.Content.Headers.ContentLength;
-            await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await using var fileStream = new FileStream(packagePath, FileMode.Create, FileAccess.Write, FileShare.None);
 
-            var buffer = new byte[81920];
-            long downloadedBytes = 0;
-            int read;
-            while ((read = await responseStream.ReadAsync(buffer, cancellationToken)) > 0)
+            // ВАЖНО: файл-поток закрываем В ЭТОМ блоке — до проверки SHA256.
+            // Иначе HashesMatch() пытается открыть файл, который ещё открыт на запись (FileShare.None),
+            // и падает с "The process cannot access the file ... being used by another process",
+            // из-за чего самообновление не проходит.
+            await using (var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            await using (var fileStream = new FileStream(packagePath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                downloadedBytes += read;
+                var buffer = new byte[81920];
+                long downloadedBytes = 0;
+                int read;
+                while ((read = await responseStream.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    downloadedBytes += read;
 
-                var totalBytesValue = totalBytes.GetValueOrDefault();
-                var percentage = totalBytesValue > 0
-                    ? downloadedBytes * 100d / totalBytesValue
-                    : 0;
+                    var totalBytesValue = totalBytes.GetValueOrDefault();
+                    var percentage = totalBytesValue > 0
+                        ? downloadedBytes * 100d / totalBytesValue
+                        : 0;
 
-                progress?.Report(new LauncherSelfUpdateProgress(
-                    Math.Clamp(percentage, 0, 100),
-                    $"Обновление лаунчера {Math.Clamp(percentage, 0, 100):0}%"));
+                    progress?.Report(new LauncherSelfUpdateProgress(
+                        Math.Clamp(percentage, 0, 100),
+                        $"Обновление лаунчера {Math.Clamp(percentage, 0, 100):0}%"));
+                }
+
+                await fileStream.FlushAsync(cancellationToken);
             }
-
-            await fileStream.FlushAsync(cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(expectedSha256) && !HashesMatch(packagePath, expectedSha256))
             {
