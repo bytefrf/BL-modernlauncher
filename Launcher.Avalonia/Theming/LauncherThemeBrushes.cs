@@ -51,6 +51,22 @@ public static class LauncherThemeBrushes
         Set(resources, "PrimaryButtonBorderBrush", theme.PrimaryButtonBorder);
         Set(resources, "PrimaryButtonHoverBrush", theme.PrimaryButtonHover);
 
+        // Ползунок Fluent рисуется СВОИМ синим акцентом — в WPF-версии такого не было,
+        // потому что там шаблон писался руками. Перекрываем ключи темы Fluent под нашу палитру,
+        // иначе синяя ручка выбивается из оформления на всех окнах сразу.
+        Set(resources, "SliderThumbBackground", theme.Accent);
+        Set(resources, "SliderThumbBackgroundPointerOver", theme.Accent);
+        Set(resources, "SliderThumbBackgroundPressed", theme.AccentDark);
+        Set(resources, "SliderThumbBackgroundDisabled", theme.Muted);
+        Set(resources, "SliderTrackValueFill", theme.Accent);
+        Set(resources, "SliderTrackValueFillPointerOver", theme.Accent);
+        Set(resources, "SliderTrackValueFillPressed", theme.AccentDark);
+        Set(resources, "SliderTrackValueFillDisabled", theme.Muted);
+        Set(resources, "SliderTrackFill", theme.Stroke);
+        Set(resources, "SliderTrackFillPointerOver", theme.Stroke);
+        Set(resources, "SliderTrackFillPressed", theme.Stroke);
+        Set(resources, "SliderTrackFillDisabled", theme.Stroke);
+
         // Стеклянные кисти выводим из цветов темы, чтобы glass перекрашивался вместе с темой:
         // заливка — затемнённые полупрозрачные тона панели/фона, грань — светлый приглушённый тон.
         resources["GlassFillBrush"] = CreateVerticalGradient(
