@@ -1047,6 +1047,15 @@ static void RunResolveSelfTest()
 
     CheckTrue("expand: пустая строка не падает", LauncherPaths.Expand(null) == string.Empty, "null → \"\"");
 
+    // 10. Найдено ПЕРВЫМ ЗАПУСКОМ на настоящей Ubuntu: GetFolderPath(ApplicationData) вернул там
+    //     пустую строку, и «%AppData%\ForgeLauncher» превращался в папку с буквальным именем
+    //     «%AppData%» рядом с бинарником — данные лаунчера уезжали не туда.
+    var appDataRoot = LauncherPaths.GetApplicationDataRoot();
+    CheckTrue("папка данных не пустая", appDataRoot.Length > 0, appDataRoot);
+    CheckTrue("папка данных абсолютная", Path.IsPathRooted(appDataRoot), appDataRoot);
+    CheckTrue("домашний каталог не пустой", LauncherPaths.GetHomeRoot().Length > 0, LauncherPaths.GetHomeRoot());
+    CheckTrue("в раскрытом пути не осталось токенов", !expanded.Contains('%'), expanded);
+
     try { Directory.Delete(temp, true); } catch { }
     Console.WriteLine($"\nSELFTEST_RESULT pass={pass} fail={fail}");
 }

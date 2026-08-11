@@ -28,7 +28,7 @@ public static class LauncherProfile
     /// Куда ставить игру в изолированном профиле. Для обычного режима не используется.
     /// </summary>
     public static string IsolatedInstallRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        LauncherPaths.GetApplicationDataRoot(),
         DataFolderName,
         "game");
 

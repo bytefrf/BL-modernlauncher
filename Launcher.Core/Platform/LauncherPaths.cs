@@ -25,15 +25,15 @@ public static class LauncherPaths
             return expanded;
         }
 
-        expanded = ReplaceToken(expanded, "%AppData%", Environment.SpecialFolder.ApplicationData);
-        expanded = ReplaceToken(expanded, "%LocalAppData%", Environment.SpecialFolder.LocalApplicationData);
-        expanded = ReplaceToken(expanded, "%UserProfile%", Environment.SpecialFolder.UserProfile);
-        expanded = ReplaceToken(expanded, "%Home%", Environment.SpecialFolder.UserProfile);
+        expanded = ReplaceToken(expanded, "%AppData%", GetApplicationDataRoot());
+        expanded = ReplaceToken(expanded, "%LocalAppData%", GetLocalApplicationDataRoot());
+        expanded = ReplaceToken(expanded, "%UserProfile%", GetHomeRoot());
+        expanded = ReplaceToken(expanded, "%Home%", GetHomeRoot());
 
         // Тильда в начале — привычная для Unix запись домашнего каталога.
         if (expanded.StartsWith("~/", StringComparison.Ordinal) || expanded == "~")
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var home = GetHomeRoot();
             expanded = expanded.Length == 1 ? home : Path.Combine(home, expanded[2..]);
         }
 
@@ -47,16 +47,66 @@ public static class LauncherPaths
     /// </summary>
     public static string ExpandFull(string? value) => Path.GetFullPath(Expand(value));
 
-    private static string ReplaceToken(string value, string token, Environment.SpecialFolder folder)
+    /// <summary>
+    /// Каталог данных приложений (аналог <c>%AppData%</c>). Всегда возвращает непустой путь.
+    /// </summary>
+    /// <remarks>
+    /// НЕ заменять на голый <see cref="Environment.GetFolderPath(Environment.SpecialFolder)"/>:
+    /// на живой Ubuntu он вернул ПУСТУЮ строку (пустой <c>XDG_CONFIG_HOME</c>), после чего
+    /// <c>%AppData%\ForgeLauncher</c> превращался в папку с буквальным именем «%AppData%»
+    /// рядом с исполняемым файлом. Найдено первым запуском на настоящем Linux.
+    /// </remarks>
+    public static string GetApplicationDataRoot()
+        => ResolveFolder(Environment.SpecialFolder.ApplicationData, "XDG_CONFIG_HOME", ".config");
+
+    /// <summary>Каталог локальных данных (аналог <c>%LocalAppData%</c>). Всегда непустой.</summary>
+    public static string GetLocalApplicationDataRoot()
+        => ResolveFolder(Environment.SpecialFolder.LocalApplicationData, "XDG_DATA_HOME", ".local/share");
+
+    /// <summary>Домашний каталог пользователя. Всегда непустой.</summary>
+    public static string GetHomeRoot()
     {
-        if (!value.Contains(token, StringComparison.OrdinalIgnoreCase))
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(home))
+        {
+            return home;
+        }
+
+        home = Environment.GetEnvironmentVariable("HOME");
+        return string.IsNullOrWhiteSpace(home) ? Path.GetTempPath() : home;
+    }
+
+    private static string ResolveFolder(Environment.SpecialFolder folder, string xdgVariable, string fallbackSubdirectory)
+    {
+        var value = Environment.GetFolderPath(folder);
+        if (!string.IsNullOrWhiteSpace(value))
         {
             return value;
         }
 
-        var replacement = Environment.GetFolderPath(folder);
-        return string.IsNullOrEmpty(replacement)
-            ? value
-            : value.Replace(token, replacement, StringComparison.OrdinalIgnoreCase);
+        if (HostPlatform.IsWindows)
+        {
+            // На Windows это означало бы сломанный профиль; лучше вернуть хоть что-то рабочее,
+            // чем относительный путь рядом с exe.
+            return Path.Combine(GetHomeRoot(), "AppData", "Roaming");
+        }
+
+        var xdg = Environment.GetEnvironmentVariable(xdgVariable);
+        if (!string.IsNullOrWhiteSpace(xdg))
+        {
+            return xdg;
+        }
+
+        return Path.Combine(GetHomeRoot(), fallbackSubdirectory.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static string ReplaceToken(string value, string token, string replacement)
+    {
+        if (!value.Contains(token, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(replacement))
+        {
+            return value;
+        }
+
+        return value.Replace(token, replacement, StringComparison.OrdinalIgnoreCase);
     }
 }

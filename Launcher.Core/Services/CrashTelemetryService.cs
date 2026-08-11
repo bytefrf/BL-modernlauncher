@@ -2,6 +2,8 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 
+using Launcher.App.Platform;
+
 namespace Launcher.App.Services;
 
 /// <summary>
@@ -61,7 +63,7 @@ public static class CrashTelemetryService
         try
         {
             var settingsPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                LauncherPaths.GetApplicationDataRoot(),
                 "ForgeLauncher", ".launcher", "user-settings.json");
             if (File.Exists(settingsPath))
             {

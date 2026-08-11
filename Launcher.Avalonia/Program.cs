@@ -14,6 +14,16 @@ internal static class Program
         // кэшу и папке установки.
         LauncherProfile.UseFromCommandLine(args);
 
+        // --check-runtime: поставить Java по манифесту и показать её версию, без окна.
+        // Нужен для проверки на настоящих Linux и macOS: там Java приезжает в tar.gz,
+        // а после распаковки ей обязателен бит запуска. Через интерфейс это не проверить
+        // автоматически, а ошибка здесь ломает запуск игры у каждого игрока.
+        if (args.Any(argument => argument.Equals("--check-runtime", StringComparison.OrdinalIgnoreCase)))
+        {
+            Environment.ExitCode = RuntimeCheck.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

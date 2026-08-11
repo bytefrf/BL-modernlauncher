@@ -2114,7 +2114,7 @@ public partial class MainWindow : Window
     /// </summary>
     private string ResolveErrorInstallRoot()
         => _configuration is null
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LauncherProfile.DataFolderName)
+            ? Path.Combine(LauncherPaths.GetApplicationDataRoot(), LauncherProfile.DataFolderName)
             : ModpackCatalogLogic.ResolveEffectiveInstallRoot(_configuration, _modpackManifest, _userSettings);
 
     /// <summary>Без clientId поддержка не свяжет обращение с логами этого же игрока.</summary>

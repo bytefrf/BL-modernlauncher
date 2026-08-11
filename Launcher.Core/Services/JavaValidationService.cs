@@ -273,7 +273,7 @@ public static partial class JavaValidationService
         candidates.Add(Path.Combine("/usr/local/bin", executableName));
 
         // SDKMAN! ставит JDK в домашний каталог пользователя.
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var home = LauncherPaths.GetHomeRoot();
         if (!string.IsNullOrWhiteSpace(home))
         {
             var sdkman = Path.Combine(home, ".sdkman", "candidates", "java");

@@ -66,7 +66,7 @@ public sealed class LauncherConfiguration
     public string GetUserSettingsPath()
     {
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            LauncherPaths.GetApplicationDataRoot(),
             LauncherProfile.DataFolderName,
             ".launcher",
             "user-settings.json");
@@ -79,7 +79,7 @@ public sealed class LauncherConfiguration
     public string GetPlayerProfilePath()
     {
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            LauncherPaths.GetApplicationDataRoot(),
             LauncherProfile.DataFolderName,
             ".launcher",
             "player-stats.json");
@@ -88,7 +88,7 @@ public sealed class LauncherConfiguration
     public string GetCachedModpackManifestPath()
     {
         return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            LauncherPaths.GetApplicationDataRoot(),
             LauncherProfile.DataFolderName,
             ".launcher",
             "modpack-manifest.cached.json");

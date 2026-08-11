@@ -5,6 +5,8 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
+using Launcher.App.Platform;
+
 namespace Launcher.App.Services;
 
 public sealed class SupportLogService(HttpClient httpClient)
@@ -23,7 +25,7 @@ public sealed class SupportLogService(HttpClient httpClient)
         CancellationToken cancellationToken = default)
     {
         installRoot = string.IsNullOrWhiteSpace(installRoot) || installRoot == "-"
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ForgeLauncher")
+            ? Path.Combine(LauncherPaths.GetApplicationDataRoot(), "ForgeLauncher")
             : installRoot;
 
         var supportRoot = Path.Combine(installRoot, ".launcher", "support");
@@ -53,7 +55,7 @@ public sealed class SupportLogService(HttpClient httpClient)
         AddFileEntry(
             archive,
             Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                LauncherPaths.GetLocalApplicationDataRoot(),
                 "TerraFirmaGregModernLauncher",
                 "bootstrapper-error.log"),
             "bootstrapper/bootstrapper-error.log",
