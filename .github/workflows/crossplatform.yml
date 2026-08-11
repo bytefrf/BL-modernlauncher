@@ -79,7 +79,10 @@ jobs:
           test -f "$exe" || { echo "::error::нет точки входа $exe"; exit 1; }
           chmod +x "$exe"
           file "$exe"
-          ls -la "publish/${{ matrix.rid }}" | head -20
+          # Без пайпа в head: раннер запускает bash с pipefail, и закрытый head роняет шаг
+          # с «Broken pipe» на ровном месте.
+          echo "файлов в пакете: $(ls -1 "publish/${{ matrix.rid }}" | wc -l)"
+          du -sh "publish/${{ matrix.rid }}"
 
       - name: Upload package
         uses: actions/upload-artifact@v4
