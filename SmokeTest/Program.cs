@@ -283,6 +283,130 @@ if (args.Length >= 1 && args[0].Equals("--error-report", StringComparison.Ordina
     return;
 }
 
+// Способ установки и план обновления: SmokeTest --update-plan (без сети)
+// Главное, что проверяем: установленный системным пакетом лаунчер НЕ пытается обновить себя сам,
+// а Windows ведёт себя ровно как раньше.
+if (args.Length >= 1 && args[0].Equals("--update-plan", StringComparison.OrdinalIgnoreCase))
+{
+    var ok = 0;
+    var bad = 0;
+    void Expect(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { ok++; } else { bad++; }
+    }
+
+    // AppImage узнаётся по переменной APPIMAGE, которую выставляет сам образ.
+    var appImage = LauncherInstallation.BuildPlan("/tmp/.mount_blXYZ/usr/bin/Launcher.Avalonia", "/home/user/BL-modern.AppImage");
+    Expect("AppImage распознан", appImage.Kind == LauncherInstallationKind.AppImage, appImage.Kind.ToString());
+    Expect("AppImage обновляет себя сам", appImage.CanSelfUpdate, "да");
+    Expect("цель обновления — сам файл образа",
+        appImage.TargetPath == "/home/user/BL-modern.AppImage", appImage.TargetPath);
+
+    // Установка пакетом: /opt и /usr.
+    foreach (var path in new[] { "/opt/bl-modern/Launcher.Avalonia", "/usr/lib/bl-modern/Launcher.Avalonia" })
+    {
+        var package = LauncherInstallation.BuildPlan(path, appImagePath: string.Empty);
+        Expect($"пакет распознан ({path})", package.Kind == LauncherInstallationKind.SystemPackage, package.Kind.ToString());
+        Expect("пакет НЕ обновляет себя сам", !package.CanSelfUpdate, "верно");
+        Expect("игроку объясняют, что делать", package.Instruction.Contains("пакет"), package.Instruction[..40] + "…");
+    }
+
+    // Портативная распаковка в домашней папке обновляется как раньше.
+    var portable = LauncherInstallation.BuildPlan("/home/user/launcher/Launcher.Avalonia", appImagePath: string.Empty);
+    Expect("портативная установка распознана", portable.Kind == LauncherInstallationKind.Portable, portable.Kind.ToString());
+    Expect("портативная обновляет себя сама", portable.CanSelfUpdate, "да");
+
+    // Windows: путь в Program Files не должен считаться системным пакетом.
+    var windows = LauncherInstallation.BuildPlan(@"C:\Program Files\BL-modern\Launcher.App.exe", appImagePath: string.Empty);
+    Expect("windows-путь не считается пакетом", windows.Kind != LauncherInstallationKind.SystemPackage, windows.Kind.ToString());
+    Expect("windows обновляет себя сам", windows.CanSelfUpdate, "да");
+
+    // Выбор пакета из манифеста. Старое поле PackageUrl обязано продолжать работать.
+    var launcherInfo = new ManifestLauncherInfo { PackageUrl = "https://bl-modern.ru/download/launcher.zip", Sha256 = "ABC" };
+    var legacy = LauncherInstallation.ResolvePackage(launcherInfo, LauncherInstallationKind.Portable);
+    Expect("старый PackageUrl работает", legacy?.Url == "https://bl-modern.ru/download/launcher.zip", legacy?.Url ?? "(нет)");
+
+    // Системному пакету общий zip не подходит — он его не получает.
+    var forPackage = LauncherInstallation.ResolvePackage(launcherInfo, LauncherInstallationKind.SystemPackage);
+    Expect("системному пакету общий zip не отдаётся", forPackage is null, forPackage?.Url ?? "(нет)");
+
+    launcherInfo.PackagesByInstall["appimage"] = new ManifestLauncherPackage { Url = "https://bl-modern.ru/download/BL-modern.AppImage", Sha256 = "DEF" };
+    launcherInfo.PackagesByInstall["package"] = new ManifestLauncherPackage { DownloadPageUrl = "https://bl-modern.ru/download/" };
+
+    var forAppImage = LauncherInstallation.ResolvePackage(launcherInfo, LauncherInstallationKind.AppImage);
+    Expect("для AppImage берётся свой пакет", forAppImage?.Url.EndsWith(".AppImage") == true, forAppImage?.Url ?? "(нет)");
+
+    var pageForPackage = LauncherInstallation.ResolvePackage(launcherInfo, LauncherInstallationKind.SystemPackage);
+    Expect("для пакета есть страница загрузки",
+        !string.IsNullOrWhiteSpace(pageForPackage?.DownloadPageUrl), pageForPackage?.DownloadPageUrl ?? "(нет)");
+
+    Console.WriteLine($"UPDATE_PLAN_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={ok} fail={bad}");
+    Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
+// Механика самообновления AppImage: SmokeTest --appimage-update (только Unix, без сети)
+// Проверяем не загрузку, а самое опасное: подменяется ли файл образа и запускается ли новый.
+// Ошибка здесь оставляет игрока без лаунчера вообще.
+if (args.Length >= 1 && args[0].Equals("--appimage-update", StringComparison.OrdinalIgnoreCase))
+{
+    if (OperatingSystem.IsWindows())
+    {
+        Console.WriteLine("APPIMAGE_UPDATE_RESULT=SKIP (только Linux/macOS)");
+        return;
+    }
+
+    var ok = 0;
+    var bad = 0;
+    void Expect(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { ok++; } else { bad++; }
+    }
+
+    var sandbox = Path.Combine(Path.GetTempPath(), "bl-appimage-" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(sandbox);
+
+    // «Старый образ» и «новый образ» — обычные скрипты: так видно, какой из них запустился.
+    var target = Path.Combine(sandbox, "BL-modern.AppImage");
+    var marker = Path.Combine(sandbox, "started.txt");
+    File.WriteAllText(target, "#!/bin/sh\necho OLD > " + marker + "\n");
+    File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+    var package = Path.Combine(sandbox, "downloaded.AppImage");
+    File.WriteAllText(package, "#!/bin/sh\necho NEW > " + marker + "\n");
+
+    // Процесс, завершения которого будет ждать скрипт обновления.
+    using var placeholder = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/bin/sh", "-c \"sleep 1\""));
+    new LauncherSelfUpdateService(new HttpClient())
+        .ApplyAppImageUpdateAndRestart(package, target, placeholder!.Id);
+
+    await placeholder.WaitForExitAsync();
+
+    // Скрипт ждёт выхода процесса, потом меняет файл и запускает новый образ.
+    var deadline = DateTime.UtcNow.AddSeconds(20);
+    while (DateTime.UtcNow < deadline && (!File.Exists(marker) || File.ReadAllText(marker).Trim() != "NEW"))
+    {
+        await Task.Delay(300);
+    }
+
+    Expect("новый образ запущен", File.Exists(marker) && File.ReadAllText(marker).Trim() == "NEW",
+        File.Exists(marker) ? File.ReadAllText(marker).Trim() : "(маркера нет)");
+    Expect("файл образа заменён", File.Exists(target) && File.ReadAllText(target).Contains("NEW"),
+        File.Exists(target) ? "содержит NEW" : "(файла нет)");
+    Expect("бит запуска сохранён",
+        File.Exists(target) && (File.GetUnixFileMode(target) & UnixFileMode.UserExecute) != 0,
+        File.Exists(target) ? File.GetUnixFileMode(target).ToString() : "(файла нет)");
+    Expect("скачанный файл не остался мусором", !File.Exists(package), package);
+
+    try { Directory.Delete(sandbox, true); } catch { /* временная папка */ }
+
+    Console.WriteLine($"APPIMAGE_UPDATE_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={ok} fail={bad}");
+    Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
 // Интерфейсные звуки: SmokeTest --sound
 // Проверка на слух — синтез общий, а вот проигрыватель у каждой ОС свой
 // (winmm на Windows, afplay/paplay/aplay на Unix).

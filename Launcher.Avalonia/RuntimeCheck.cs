@@ -175,6 +175,12 @@ internal static class RuntimeCheck
         try
         {
             Console.WriteLine($"ОС: {HostPlatform.MojangOsName}, профиль: {LauncherProfile.DataFolderName}");
+
+            // Способ установки определяет, как лаунчер будет обновляться. Печатаем, чтобы это
+            // можно было проверить на живой системе, а не только тестом.
+            var updatePlan = LauncherInstallation.BuildPlan(Environment.ProcessPath);
+            Console.WriteLine($"Установка: {updatePlan.Kind}, самообновление: {(updatePlan.CanSelfUpdate ? "да" : "нет")}");
+            Console.WriteLine($"Что делать при обновлении: {updatePlan.Instruction}");
             Console.WriteLine($"HOME={Environment.GetEnvironmentVariable("HOME")}");
             Console.WriteLine($"XDG_CONFIG_HOME={Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")}");
             Console.WriteLine($"ApplicationData='{Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}'");

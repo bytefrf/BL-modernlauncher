@@ -56,7 +56,7 @@ jobs:
           failed=0
           for mode in --selftest --classify --embedded --manifest-fallback --catalog \
                       --primary-action --profile-isolation --markdown --servers --error-report \
-                      --crash; do
+                      --crash --update-plan --appimage-update; do
             echo "::group::$mode"
             if ! "$smoke" "$mode"; then
               echo "::error::режим $mode завершился с ошибкой"

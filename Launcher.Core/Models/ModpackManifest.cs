@@ -75,6 +75,28 @@ public sealed class ManifestLauncherInfo
     public string Version { get; set; } = string.Empty;
     public string PackageUrl { get; set; } = string.Empty;
     public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Пакеты обновления по способу установки. Ключи: <c>windows</c>, <c>portable</c>,
+    /// <c>appimage</c>, <c>macbundle</c>, <c>package</c>.
+    /// </summary>
+    /// <remarks>
+    /// Одного <see cref="PackageUrl"/> мало: на Linux и macOS формат обновления зависит от того,
+    /// как лаунчер установлен. AppImage обновляется одним файлом, бандл .app — целым каталогом,
+    /// а системный пакет вообще обновляется своим менеджером. Поле необязательное: если его нет,
+    /// используется прежний <see cref="PackageUrl"/> и поведение не меняется.
+    /// </remarks>
+    public Dictionary<string, ManifestLauncherPackage> PackagesByInstall { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>Один пакет обновления лаунчера.</summary>
+public sealed class ManifestLauncherPackage
+{
+    public string Url { get; set; } = string.Empty;
+    public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>Куда отправить игрока, если обновиться самому нельзя (системный пакет).</summary>
+    public string DownloadPageUrl { get; set; } = string.Empty;
 }
 
 public sealed class ManifestModpackInfo

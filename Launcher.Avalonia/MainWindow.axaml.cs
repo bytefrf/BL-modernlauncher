@@ -1773,7 +1773,33 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task UpdateLauncherAsync()
     {
-        if (_modpackManifest is null || string.IsNullOrWhiteSpace(_modpackManifest.Launcher.PackageUrl))
+        if (_modpackManifest is null)
+        {
+            SetStatus("Для лаунчера не указан адрес пакета обновления.");
+            return;
+        }
+
+        var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+        var currentProcessPath = Environment.ProcessPath ?? currentProcess.MainModule?.FileName;
+
+        // Способ обновления зависит от того, как лаунчер установлен: AppImage меняется одним
+        // файлом, бандл .app — целиком, а установленный пакетом обновлять самому нельзя.
+        var plan = LauncherInstallation.BuildPlan(currentProcessPath);
+        var update = LauncherInstallation.ResolvePackage(_modpackManifest.Launcher, plan.Kind);
+
+        if (!plan.CanSelfUpdate)
+        {
+            SetStatus(plan.Instruction);
+            var page = update?.DownloadPageUrl;
+            if (!string.IsNullOrWhiteSpace(page))
+            {
+                OpenExternalLink(_modpackManifest.ResolveUri(page).ToString());
+            }
+
+            return;
+        }
+
+        if (update is null || string.IsNullOrWhiteSpace(update.Url))
         {
             SetStatus("Для лаунчера не указан адрес пакета обновления.");
             return;
@@ -1783,7 +1809,7 @@ public partial class MainWindow : Window
         progressBar.Value = 0;
         SetStatus("Обновление лаунчера 0%");
 
-        var packageUri = _modpackManifest.ResolveUri(_modpackManifest.Launcher.PackageUrl);
+        var packageUri = _modpackManifest.ResolveUri(update.Url);
 
         // Пакет обновления — исполняемый код, который распакуется и запустится. Качаем только
         // по HTTPS, чтобы исключить подмену на незащищённом транспорте.
@@ -1799,22 +1825,34 @@ public partial class MainWindow : Window
             SetStatus(report.Message);
         });
 
-        var package = await new LauncherSelfUpdateService(_httpClient).DownloadUpdatePackageAsync(
-            packageUri, _modpackManifest.Launcher.Sha256, progress, CancellationToken.None);
+        var service = new LauncherSelfUpdateService(_httpClient);
+        var package = await service.DownloadUpdatePackageAsync(
+            packageUri, update.Sha256, progress, CancellationToken.None);
 
         progressBar.Value = 100;
         SetStatus("Перезапуск лаунчера...");
 
-        var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
-        var currentProcessPath = Environment.ProcessPath ?? currentProcess.MainModule?.FileName;
         if (string.IsNullOrWhiteSpace(currentProcessPath))
         {
             SetStatus("Не удалось определить путь к текущему лаунчеру.");
             return;
         }
 
-        new LauncherSelfUpdateService(_httpClient).ApplyUpdateAndRestart(
-            package.PackagePath, AppContext.BaseDirectory, currentProcessPath, currentProcess.Id);
+        switch (plan.Kind)
+        {
+            case LauncherInstallationKind.AppImage:
+                service.ApplyAppImageUpdateAndRestart(package.PackagePath, plan.TargetPath, currentProcess.Id);
+                break;
+
+            case LauncherInstallationKind.MacBundle:
+                service.ApplyMacBundleUpdateAndRestart(package.PackagePath, plan.TargetPath, currentProcess.Id);
+                break;
+
+            default:
+                service.ApplyUpdateAndRestart(
+                    package.PackagePath, AppContext.BaseDirectory, currentProcessPath, currentProcess.Id);
+                break;
+        }
 
         _allowClose = true;
         Close();

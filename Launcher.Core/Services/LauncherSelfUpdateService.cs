@@ -113,9 +113,92 @@ public sealed class LauncherSelfUpdateService(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Linux и macOS: тот же сценарий на POSIX-шелле. Распаковку делает <c>unzip</c>, а если его нет —
-    /// сам лаунчер заранее раскладывает файлы во временную папку, и скрипту остаётся их перенести.
-    /// Права на исполнение выставляются заново: zip их не переносит, а без них перезапуск невозможен.
+    /// Обновление одного файла <c>.AppImage</c>: скачанный файл занимает место текущего.
+    /// </summary>
+    /// <remarks>
+    /// Распаковывать нечего — AppImage это и есть приложение целиком. Заменяем через
+    /// временное имя и <c>mv</c>: перезапись работающего файла на месте даёт «Text file busy».
+    /// </remarks>
+    public void ApplyAppImageUpdateAndRestart(string packagePath, string appImagePath, int currentProcessId)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "bl-launcher-update");
+        Directory.CreateDirectory(tempRoot);
+        var scriptPath = Path.Combine(tempRoot, $"apply-appimage-{Guid.NewGuid():N}.sh");
+
+        var script = $"""
+            #!/bin/sh
+            while kill -0 {currentProcessId} 2>/dev/null; do sleep 0.3; done
+            sleep 1
+            target={EscapeShell(appImagePath)}
+            new={EscapeShell(packagePath)}
+            chmod +x "$new"
+            mv -f "$new" "$target"
+            chmod +x "$target"
+            "$target" &
+            rm -f "$0"
+            """;
+
+        File.WriteAllText(scriptPath, script);
+        StartShellScript(scriptPath);
+    }
+
+    /// <summary>
+    /// Обновление бандла <c>.app</c> на macOS: старый каталог заменяется новым целиком.
+    /// </summary>
+    /// <remarks>
+    /// Точечная перезапись файлов внутри бандла ломает подпись, поэтому меняем каталог
+    /// целиком и снимаем карантин с нового — иначе Gatekeeper объявит бандл повреждённым.
+    /// </remarks>
+    public void ApplyMacBundleUpdateAndRestart(string packagePath, string bundlePath, int currentProcessId)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "bl-launcher-update");
+        Directory.CreateDirectory(tempRoot);
+
+        var stagingRoot = Path.Combine(tempRoot, $"staging-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stagingRoot);
+        System.IO.Compression.ZipFile.ExtractToDirectory(packagePath, stagingRoot, overwriteFiles: true);
+
+        // В архиве ожидаем сам бандл: либо .app в корне, либо содержимое бандла.
+        var extracted = Directory.EnumerateDirectories(stagingRoot, "*.app").FirstOrDefault() ?? stagingRoot;
+
+        var scriptPath = Path.Combine(tempRoot, $"apply-bundle-{Guid.NewGuid():N}.sh");
+        var script = $"""
+            #!/bin/sh
+            while kill -0 {currentProcessId} 2>/dev/null; do sleep 0.3; done
+            sleep 1
+            bundle={EscapeShell(bundlePath)}
+            staged={EscapeShell(extracted)}
+            rm -rf "$bundle.old"
+            mv "$bundle" "$bundle.old" 2>/dev/null
+            cp -a "$staged" "$bundle"
+            rm -rf "$bundle.old" {EscapeShell(stagingRoot)}
+            rm -f {EscapeShell(packagePath)}
+            xattr -dr com.apple.quarantine "$bundle" 2>/dev/null
+            chmod +x "$bundle/Contents/MacOS/"* 2>/dev/null
+            open "$bundle"
+            rm -f "$0"
+            """;
+
+        File.WriteAllText(scriptPath, script);
+        StartShellScript(scriptPath);
+    }
+
+    private static void StartShellScript(string scriptPath)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "/bin/sh",
+            ArgumentList = { scriptPath },
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetTempPath()
+        });
+    }
+
+    /// <summary>
+    /// Портативная установка на Linux и macOS: файлы раскладываются поверх папки лаунчера
+    /// POSIX-скриптом. Распаковку делает сам лаунчер средствами .NET, чтобы не зависеть от
+    /// наличия <c>unzip</c>; права на исполнение выставляются заново — zip их не переносит.
     /// </summary>
     private void ApplyUpdateAndRestartUnix(
         string packagePath,
