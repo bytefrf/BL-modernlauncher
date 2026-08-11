@@ -407,6 +407,72 @@ if (args.Length >= 1 && args[0].Equals("--appimage-update", StringComparison.Ord
     return;
 }
 
+// Механика самообновления бандла .app: SmokeTest --macbundle-update (только Unix, без сети)
+// Проверяем замену каталога целиком: точечная правка внутри бандла ломает подпись,
+// а неудачная замена оставляет игрока без приложения.
+if (args.Length >= 1 && args[0].Equals("--macbundle-update", StringComparison.OrdinalIgnoreCase))
+{
+    if (OperatingSystem.IsWindows())
+    {
+        Console.WriteLine("MACBUNDLE_UPDATE_RESULT=SKIP (только Linux/macOS)");
+        return;
+    }
+
+    var ok = 0;
+    var bad = 0;
+    void Expect(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { ok++; } else { bad++; }
+    }
+
+    var sandbox = Path.Combine(Path.GetTempPath(), "bl-bundle-" + Guid.NewGuid().ToString("N")[..8]);
+    var bundle = Path.Combine(sandbox, "BL-modern.app");
+    Directory.CreateDirectory(Path.Combine(bundle, "Contents", "MacOS"));
+    File.WriteAllText(Path.Combine(bundle, "Contents", "Info.plist"), "<plist>OLD</plist>");
+    File.WriteAllText(Path.Combine(bundle, "Contents", "MacOS", "Launcher.Avalonia"), "OLD");
+
+    // Файл игрока внутри бандла быть не должен, но проверим, что старый бандл именно ЗАМЕНЯЕТСЯ,
+    // а не смешивается с новым: иначе после обновления остаются файлы прошлой версии.
+    File.WriteAllText(Path.Combine(bundle, "Contents", "stale.txt"), "мусор прошлой версии");
+
+    // Готовим «скачанный» архив: внутри — новый бандл.
+    var newBundleRoot = Path.Combine(sandbox, "staging");
+    var newBundle = Path.Combine(newBundleRoot, "BL-modern.app");
+    Directory.CreateDirectory(Path.Combine(newBundle, "Contents", "MacOS"));
+    File.WriteAllText(Path.Combine(newBundle, "Contents", "Info.plist"), "<plist>NEW</plist>");
+    File.WriteAllText(Path.Combine(newBundle, "Contents", "MacOS", "Launcher.Avalonia"), "NEW");
+
+    var package = Path.Combine(sandbox, "update.zip");
+    System.IO.Compression.ZipFile.CreateFromDirectory(newBundleRoot, package);
+    Directory.Delete(newBundleRoot, true);
+
+    using var placeholder = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/bin/sh", "-c \"sleep 1\""));
+    new LauncherSelfUpdateService(new HttpClient())
+        .ApplyMacBundleUpdateAndRestart(package, bundle, placeholder!.Id);
+
+    await placeholder.WaitForExitAsync();
+
+    var plist = Path.Combine(bundle, "Contents", "Info.plist");
+    var deadline = DateTime.UtcNow.AddSeconds(20);
+    while (DateTime.UtcNow < deadline && (!File.Exists(plist) || !File.ReadAllText(plist).Contains("NEW")))
+    {
+        await Task.Delay(300);
+    }
+
+    Expect("бандл на месте", Directory.Exists(bundle), bundle);
+    Expect("содержимое обновилось", File.Exists(plist) && File.ReadAllText(plist).Contains("NEW"),
+        File.Exists(plist) ? File.ReadAllText(plist) : "(нет Info.plist)");
+    Expect("файлы прошлой версии убраны", !File.Exists(Path.Combine(bundle, "Contents", "stale.txt")), "stale.txt удалён");
+    Expect("временная копия .old не осталась", !Directory.Exists(bundle + ".old"), bundle + ".old");
+
+    try { Directory.Delete(sandbox, true); } catch { /* временная папка */ }
+
+    Console.WriteLine($"MACBUNDLE_UPDATE_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={ok} fail={bad}");
+    Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
 // Интерфейсные звуки: SmokeTest --sound
 // Проверка на слух — синтез общий, а вот проигрыватель у каждой ОС свой
 // (winmm на Windows, afplay/paplay/aplay на Unix).

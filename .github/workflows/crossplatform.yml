@@ -56,7 +56,7 @@ jobs:
           failed=0
           for mode in --selftest --classify --embedded --manifest-fallback --catalog \
                       --primary-action --profile-isolation --markdown --servers --error-report \
-                      --crash --update-plan --appimage-update; do
+                      --crash --update-plan --appimage-update --macbundle-update; do
             echo "::group::$mode"
             if ! "$smoke" "$mode"; then
               echo "::error::режим $mode завершился с ошибкой"
@@ -135,6 +135,38 @@ jobs:
             bash packaging/build-macos-package.sh "publish/${{ matrix.rid }}" "$version" packages
           fi
           ls -la packages
+
+      # Настоящая проверка macOS-пакета: монтируем .dmg, ставим приложение в /Applications
+      # и запускаем — ровно как игрок. Раннер и есть живой мак, другого стенда нет.
+      - name: Verify macOS package
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          dmg=$(ls packages/*.dmg)
+          echo "образ: $dmg"
+
+          hdiutil attach "$dmg" -mountpoint /Volumes/BLTest -nobrowse -quiet
+          ls -la /Volumes/BLTest
+          test -d "/Volumes/BLTest/BL-modern.app" || { echo "::error::в образе нет бандла"; exit 1; }
+          test -f "/Volumes/BLTest/ЧИТАТЬ.txt" || echo "::warning::в образе нет инструкции"
+
+          cp -R "/Volumes/BLTest/BL-modern.app" /Applications/
+          hdiutil detach /Volumes/BLTest -quiet
+
+          app="/Applications/BL-modern.app"
+          echo "--- подпись ---"
+          codesign --verify --deep --strict --verbose=2 "$app" 2>&1 | tail -3
+          echo "--- что скажет Gatekeeper ---"
+          # Без нотаризации оценка отрицательная — это ожидаемо, поэтому не валим шаг.
+          spctl --assess --type execute --verbose=2 "$app" 2>&1 | tail -3 || true
+
+          echo "--- запуск из бандла: ставит Java и проверяет её ---"
+          cp packaging/ci-launcher.config.json "$app/Contents/MacOS/launcher.config.json"
+          "$app/Contents/MacOS/Launcher.Avalonia" --check-runtime --profile=ci 2>&1 | tail -12
+
+          echo "--- окна из установленного бандла ---"
+          "$app/Contents/MacOS/Launcher.Avalonia" "--screenshot=$PWD/screenshots/${{ matrix.rid }}-installed" --profile=ci 2>&1 | tail -3
 
       - name: Upload installable packages
         if: always()

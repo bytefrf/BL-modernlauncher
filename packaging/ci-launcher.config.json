@@ -1,0 +1,6 @@
+{
+  "launcherName": "TerraFirmaGreg Modern",
+  "catalogUrl": "https://bl-modern.ru/api/catalog.php",
+  "modpackManifestUrl": "https://bl-modern.ru/download/modpack-manifest.json",
+  "distributionRoot": "%AppData%\ForgeLauncher"
+}
