@@ -126,7 +126,8 @@ jobs:
         shell: bash
         run: |
           set -e
-          version=$(grep -oPm1 '(?<=<Version>)[^<]+' Launcher.Avalonia/Launcher.Avalonia.csproj)
+          # sed, а не grep -P: на macOS grep из BSD и ключа -P у него нет.
+          version=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' Launcher.Avalonia/Launcher.Avalonia.csproj | head -1)
           echo "версия: $version"
           if [ "$RUNNER_OS" = "Linux" ]; then
             bash packaging/build-linux-packages.sh "publish/${{ matrix.rid }}" "$version" packages
