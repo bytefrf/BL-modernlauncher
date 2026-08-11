@@ -1869,8 +1869,16 @@ public partial class MainWindow : Window
 
             // Тост достижения попадает в снимок главного окна: иначе его вёрстку никак
             // не проверить, не сыграв настоящую сессию. Звук при этом не нужен.
+            // Переход прозрачности здесь ОТКЛЮЧАЕМ: на macOS-раннере он не успевает
+            // отрисоваться, и тост выпадал из снимка, хотя на Windows попадал.
             _soundService.Enabled = false;
-            EnqueueAchievementToast("⏱", "Время в игре VI", "Достичь 100 ч · +120 XP");
+            var toast = this.FindControl<Border>("AchievementToast")!;
+            toast.Transitions = null;
+            this.FindControl<TextBlock>("AchievementToastIcon")!.Text = "⏱";
+            this.FindControl<TextBlock>("AchievementToastTitle")!.Text = "Время в игре VI";
+            this.FindControl<TextBlock>("AchievementToastDescription")!.Text = "Достичь 100 ч · +120 XP";
+            toast.IsVisible = true;
+            toast.Opacity = 1;
 
             // Главное окно уже открыто — снимаем как есть.
             failures += await CaptureAsync(this, Path.Combine(directory, "01-main.png"), close: false);
