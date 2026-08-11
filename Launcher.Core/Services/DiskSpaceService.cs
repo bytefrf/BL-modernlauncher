@@ -18,13 +18,41 @@ public static class DiskSpaceService
     public static DiskSpaceCheckResult CheckInstallSpace(string installRoot, ModpackManifest? manifest)
     {
         var fullRoot = LauncherPaths.ExpandFull(installRoot);
-        var rootPath = Path.GetPathRoot(fullRoot);
-        if (string.IsNullOrWhiteSpace(rootPath))
+        var mountPoint = ResolveMountPoint(fullRoot);
+        if (string.IsNullOrWhiteSpace(mountPoint))
         {
-            return new DiskSpaceCheckResult(false, 0, 0, $"Не удалось определить диск для папки установки: {fullRoot}");
+            // Раздел не определился — это не повод запрещать установку: проверка места
+            // подстраховывает, а не решает, можно ли играть.
+            return new DiskSpaceCheckResult(true, 0, 0, $"Свободное место на диске определить не удалось ({fullRoot}).");
         }
 
-        var drive = new DriveInfo(rootPath);
+        long available;
+        try
+        {
+            available = new DriveInfo(mountPoint).AvailableFreeSpace;
+        }
+        catch (Exception exception)
+        {
+            return new DiskSpaceCheckResult(true, 0, 0, $"Свободное место на диске определить не удалось: {exception.Message}");
+        }
+
+        return Evaluate(mountPoint, available, manifest);
+    }
+
+    /// <summary>
+    /// Оценка по уже известному объёму свободного места. Вынесена отдельно, чтобы проверять
+    /// решения без настоящего диска.
+    /// </summary>
+    public static DiskSpaceCheckResult Evaluate(string driveName, long availableBytes, ModpackManifest? manifest)
+    {
+        // Ноль означает «файловая система не ответила», а не «диск полон». У игрока на Linux
+        // (саппорт-лог 11.08) свободное место читалось как 0,0 KB, и лаунчер отказывался ставить
+        // сборку на диск, где места хватало. Отрицательные значения бывают у сетевых томов.
+        if (availableBytes <= 0)
+        {
+            return new DiskSpaceCheckResult(true, 0, 0, $"Свободное место на диске {driveName} определить не удалось — продолжаем без проверки.");
+        }
+
         var archiveSize = manifest?.Modpack.ArchiveSize ?? 0;
         var forgeSize = manifest?.Runtime.ForgeInstallerSize ?? 0;
 
@@ -33,7 +61,6 @@ public static class DiskSpaceService
         var modpackBytes = archiveSize > 0 ? archiveSize : UnknownArchiveFallbackBytes;
         var extractedBytes = (long)(modpackBytes * ExtractedMultiplier);
         var requiredBytes = modpackBytes + extractedBytes + forgeSize + BaseGameFootprintBytes + WorkingHeadroomBytes;
-        var availableBytes = drive.AvailableFreeSpace;
 
         if (availableBytes < requiredBytes)
         {
@@ -41,10 +68,62 @@ public static class DiskSpaceService
                 false,
                 availableBytes,
                 requiredBytes,
-                $"Недостаточно места на диске {drive.Name}. Свободно {FormatBytes(availableBytes)}, нужно минимум {FormatBytes(requiredBytes)}.");
+                $"Недостаточно места на диске {driveName}. Свободно {FormatBytes(availableBytes)}, нужно минимум {FormatBytes(requiredBytes)}.");
         }
 
-        return new DiskSpaceCheckResult(true, availableBytes, requiredBytes, $"Свободно {FormatBytes(availableBytes)} на диске {drive.Name}.");
+        return new DiskSpaceCheckResult(true, availableBytes, requiredBytes, $"Свободно {FormatBytes(availableBytes)} на диске {driveName}.");
+    }
+
+    /// <summary>
+    /// Точка монтирования, на которой реально лежит путь.
+    /// </summary>
+    /// <remarks>
+    /// На Windows это корень диска (<c>C:\</c>) — как и было. На Unix корень пути ВСЕГДА <c>/</c>,
+    /// поэтому старый код мерил свободное место не там: у игрока сборка стояла в <c>/home/…</c>,
+    /// а проверялся <c>/</c>. Отдельный раздел под <c>/home</c> — обычное дело, и цифры расходятся
+    /// на порядки. Ищем самую длинную точку монтирования, которая является префиксом пути.
+    /// </remarks>
+    public static string ResolveMountPoint(string fullPath)
+    {
+        if (HostPlatform.IsWindows)
+        {
+            return Path.GetPathRoot(fullPath) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(fullPath))
+        {
+            return "/";
+        }
+
+        var normalized = fullPath.Replace('\\', '/');
+        var best = "/";
+
+        try
+        {
+            foreach (var drive in DriveInfo.GetDrives())
+            {
+                var mount = drive.RootDirectory.FullName.Replace('\\', '/');
+                if (mount.Length > 1 && mount.EndsWith('/'))
+                {
+                    mount = mount.TrimEnd('/');
+                }
+
+                // Именно префикс каталога, а не строки: /home не должен «поймать» /homework.
+                var isPrefix = normalized == mount ||
+                               normalized.StartsWith(mount == "/" ? "/" : mount + "/", StringComparison.Ordinal);
+                if (isPrefix && mount.Length > best.Length)
+                {
+                    best = mount;
+                }
+            }
+        }
+        catch
+        {
+            // Перечисление томов может упасть в урезанном окружении (контейнер, песочница) —
+            // тогда меряем корень, это лучше, чем отказать игроку в установке.
+        }
+
+        return best;
     }
 
     public static string FormatBytes(long bytes)

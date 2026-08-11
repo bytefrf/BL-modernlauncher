@@ -704,6 +704,60 @@ if (args.Length >= 1 && args[0].Equals("--platform", StringComparison.OrdinalIgn
     return;
 }
 
+// Проверка места на диске: SmokeTest --disk-space
+// Заведена по саппорт-логу с Linux (11.08): игрок с папкой в /home видел «Свободно 0,0 KB»
+// и не мог поставить сборку вообще.
+if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalIgnoreCase))
+{
+    var good = 0;
+    var bad = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { good++; } else { bad++; }
+    }
+
+    var manifest = new ModpackManifest();
+    manifest.Modpack.ArchiveSize = 2_800L * 1024 * 1024;
+
+    // Ровно случай из бандла: файловая система вернула ноль.
+    var unknown = DiskSpaceService.Evaluate("/", 0, manifest);
+    Check("нулевое свободное место не блокирует установку", unknown.IsOk, unknown.Message);
+
+    var negative = DiskSpaceService.Evaluate("/mnt/games", -1, manifest);
+    Check("отрицательное значение тоже не блокирует", negative.IsOk, negative.Message);
+
+    // А настоящую нехватку по-прежнему ловим.
+    var tight = DiskSpaceService.Evaluate("C:\\", 1L * 1024 * 1024 * 1024, manifest);
+    Check("реальная нехватка места ловится", !tight.IsOk, tight.Message);
+
+    var roomy = DiskSpaceService.Evaluate("C:\\", 50L * 1024 * 1024 * 1024, manifest);
+    Check("на просторном диске установка разрешена", roomy.IsOk, roomy.Message);
+
+    var mount = DiskSpaceService.ResolveMountPoint(HostPlatform.IsWindows ? @"C:\forge\tfgm" : "/home/user/Minecraft_Mods/tfgm");
+    if (HostPlatform.IsWindows)
+    {
+        // Регресс: на Windows это по-прежнему корень диска.
+        Check("Windows: корень диска не изменился", mount.StartsWith("C:", StringComparison.OrdinalIgnoreCase), mount);
+    }
+    else
+    {
+        // На Unix корень пути всегда «/», поэтому раньше мерился не тот раздел. Точка монтирования
+        // обязана быть префиксом пути; какая именно — зависит от разметки машины.
+        Check("Unix: точка монтирования — префикс пути",
+            "/home/user/Minecraft_Mods/tfgm".StartsWith(mount == "/" ? "/" : mount + "/", StringComparison.Ordinal),
+            mount);
+    }
+
+    // Реальная папка: проверка обязана отработать без исключений и что-то ответить.
+    var live = DiskSpaceService.CheckInstallSpace(Path.GetTempPath(), manifest);
+    Check("живая проверка отвечает", !string.IsNullOrWhiteSpace(live.Message), live.Message);
+
+    Console.WriteLine($"DISK_SPACE_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={good} fail={bad}");
+    Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
 // Проверка встроенных ресурсов (без сети): SmokeTest --embedded
 // Ресурсы лежат в той же сборке, что и читающий их код (Assembly.GetExecutingAssembly()).
 // После переезда кода в Launcher.Core такая ошибка иначе всплыла бы только у игрока в рантайме.

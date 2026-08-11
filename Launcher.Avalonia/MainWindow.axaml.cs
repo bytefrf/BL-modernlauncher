@@ -495,7 +495,12 @@ public partial class MainWindow : Window
             }
         }
 
-        return typeof(MainWindow).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+        // Три части, а не четыре: AssemblyVersion добавляет ревизию, и в статистике сайта
+        // появлялась отдельная строка «1.3.2.0» рядом с «1.3.2» от Windows-версии.
+        // Пакеты Linux и macOS файла launcher.version рядом с бинарём не содержат,
+        // поэтому сюда попадает каждый их запуск.
+        var assemblyVersion = typeof(MainWindow).Assembly.GetName().Version;
+        return assemblyVersion is null ? "0.0.0" : assemblyVersion.ToString(3);
     }
 
     private CatalogClient _catalogClient() => new(_httpClient);

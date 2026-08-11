@@ -61,7 +61,7 @@ jobs:
           failed=0
           for mode in --selftest --classify --embedded --manifest-fallback --catalog \
                       --primary-action --profile-isolation --markdown --servers --error-report \
-                      --crash --update-plan --appimage-update --macbundle-update --platform; do
+                      --crash --update-plan --appimage-update --macbundle-update --platform --disk-space; do
             echo "::group::$mode"
             if ! "$smoke" "$mode"; then
               echo "::error::режим $mode завершился с ошибкой"
