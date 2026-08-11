@@ -83,12 +83,21 @@ public sealed class UserSettings
 
     private static string SanitizeSegment(string value)
     {
+        // Оба разделителя режем ЯВНО, независимо от ОС: на Unix Path.GetInvalidFileNameChars()
+        // не считает '\' запрещённым символом, а LauncherPaths.Expand позже превращает его в '/'.
+        // Из-за этого id сборки вида "..\..\evil" уводил папку установки ВЫШЕ базовой.
+        value = value.Replace('\\', '_').Replace('/', '_');
+
         foreach (var invalid in Path.GetInvalidFileNameChars())
         {
             value = value.Replace(invalid, '_');
         }
 
-        return value.Trim();
+        value = value.Trim();
+
+        // Сегмент из одних точек ("." или "..") — это переход по дереву, а не имя папки.
+        // Ни одна настоящая сборка так не называется.
+        return value.Trim('.').Length == 0 ? "_" : value;
     }
 
     // Сериализация настроек идёт из разных async-цепочек; защищаемся от гонки на запись.

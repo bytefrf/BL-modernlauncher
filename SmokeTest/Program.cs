@@ -603,7 +603,10 @@ if (args.Length >= 1 && args[0].Equals("--profile-isolation", StringComparison.O
 
     var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
     var config = new LauncherConfiguration();
-    var settings = new UserSettings { InstallRoot = @"C:\forge" };
+    // Своя папка игрока должна быть абсолютной для текущей ОС: "C:\forge" на Unix — это
+    // относительное имя, и путь достроился бы от рабочего каталога.
+    var playerRoot = HostPlatform.IsWindows ? @"C:\forge" : "/opt/forge";
+    var settings = new UserSettings { InstallRoot = playerRoot };
     var manifest = new ModpackManifest();
     manifest.Modpack.Id = "tfgm";
     manifest.Install.Root = @"%AppData%\ForgeLauncher";
@@ -615,7 +618,7 @@ if (args.Length >= 1 && args[0].Equals("--profile-isolation", StringComparison.O
     Expect("без профиля: настройки в ForgeLauncher",
         normalSettings == Path.Combine(appData, "ForgeLauncher", ".launcher", "user-settings.json"), normalSettings);
     var normalRoot = ModpackCatalogLogic.ResolveEffectiveInstallRoot(config, manifest, settings);
-    Expect("без профиля: путь установки игрока сохранён", normalRoot == @"C:\forge", normalRoot);
+    Expect("без профиля: путь установки игрока сохранён", normalRoot == playerRoot, normalRoot);
 
     // 2. Изолированный профиль — и настройки, и установка уходят в сторону.
     LauncherProfile.Use("test");
@@ -883,30 +886,37 @@ static void RunResolveSelfTest()
         if (cond) pass++; else fail++;
     }
 
+    // Пути в проверках должны быть АБСОЛЮТНЫМИ для текущей ОС: "C:\mr" на Linux и macOS —
+    // это относительное имя папки, и ожидание сравнивалось бы с рабочим каталогом раннера.
+    var mr = HostPlatform.IsWindows ? @"C:\mr" : "/mnt/mr";
+    var fb = HostPlatform.IsWindows ? @"C:\fb" : "/mnt/fb";
+    var ignored = HostPlatform.IsWindows ? @"C:\ignored" : "/mnt/ignored";
+    var perPackRoot = HostPlatform.IsWindows ? @"D:\custom\sb" : "/mnt/custom/sb";
+
     // 1. Дефолтный игрок (InstallRoot пуст), мульти-режим → manifestRoot (ничего не меняется).
     var s1 = new UserSettings { InstallRoot = string.Empty };
-    Check("default user → manifestRoot", s1.ResolveInstallRoot(@"C:\mr", @"C:\fb", "tfgm"), @"C:\mr");
+    Check("default user → manifestRoot", s1.ResolveInstallRoot(mr, fb, "tfgm"), mr);
 
     // 2. Кастомный путь, мульти, сборка УЖЕ установлена в базе (маркер tfgm) → не переезжает.
     var s2 = new UserSettings { InstallRoot = baseDir };
-    Check("custom+installed → base (no relocate)", s2.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "tfgm"), baseDir);
+    Check("custom+installed → base (no relocate)", s2.ResolveInstallRoot(ignored, fb, "tfgm"), baseDir);
 
     // 3. Кастомный путь, мульти, НОВАЯ сборка (нет в базе) → подпапка <id>.
-    Check("custom+new → base\\id", s2.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "stoneblock4"), Path.Combine(baseDir, "stoneblock4"));
+    Check("custom+new → base\\id", s2.ResolveInstallRoot(ignored, fb, "stoneblock4"), Path.Combine(baseDir, "stoneblock4"));
 
     // 4. Одиночный режим (catalogModpackId=null) → база как есть, без подпапки.
-    Check("single mode → base as-is", s2.ResolveInstallRoot(@"C:\ignored", @"C:\fb", null), baseDir);
+    Check("single mode → base as-is", s2.ResolveInstallRoot(ignored, fb, null), baseDir);
 
     // 5. Явный per-pack override побеждает.
     var s5 = new UserSettings { InstallRoot = baseDir };
-    s5.ModpackInstallRoots["stoneblock4"] = @"D:\custom\sb";
-    Check("per-pack override wins", s5.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "stoneblock4"), @"D:\custom\sb");
+    s5.ModpackInstallRoots["stoneblock4"] = perPackRoot;
+    Check("per-pack override wins", s5.ResolveInstallRoot(ignored, fb, "stoneblock4"), perPackRoot);
 
     // 6. ignoreModpackOverride игнорирует override → дефолт (подпапка).
-    Check("ignoreOverride → default subfolder", s5.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "stoneblock4", ignoreModpackOverride: true), Path.Combine(baseDir, "stoneblock4"));
+    Check("ignoreOverride → default subfolder", s5.ResolveInstallRoot(ignored, fb, "stoneblock4", ignoreModpackOverride: true), Path.Combine(baseDir, "stoneblock4"));
 
     // 7. Опасный id с разделителями/.. не выходит за пределы базы.
-    var r7 = s2.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "..\\..\\evil/x");
+    var r7 = s2.ResolveInstallRoot(ignored, fb, "..\\..\\evil/x");
     CheckTrue("malicious id stays under base", r7.StartsWith(Path.GetFullPath(baseDir), StringComparison.OrdinalIgnoreCase), r7);
 
     // 8. Пустой/битый маркер в базе → считаем «не установлено» → подпапка.
@@ -914,7 +924,7 @@ static void RunResolveSelfTest()
     Directory.CreateDirectory(Path.Combine(baseDir2, ".launcher"));
     File.WriteAllText(Path.Combine(baseDir2, ".launcher", "modpack.version"), "");
     var s8 = new UserSettings { InstallRoot = baseDir2 };
-    Check("empty marker → subfolder", s8.ResolveInstallRoot(@"C:\ignored", @"C:\fb", "tfgm"), Path.Combine(baseDir2, "tfgm"));
+    Check("empty marker → subfolder", s8.ResolveInstallRoot(ignored, fb, "tfgm"), Path.Combine(baseDir2, "tfgm"));
 
     // 9. Раскрытие путей из конфигурации. На Windows обязано совпадать с прежним поведением
     //    (ExpandEnvironmentVariables), иначе у игроков уедет папка установки.
