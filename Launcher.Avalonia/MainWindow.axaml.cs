@@ -84,6 +84,16 @@ public partial class MainWindow : Window
             return;
         }
 
+        // --screenshot=<папка>: снять каждое окно в PNG и выйти. Так вёрстку на macOS и Linux
+        // видно из CI, не имея этих машин под рукой.
+        var screenshotDir = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--screenshot=", StringComparison.OrdinalIgnoreCase));
+        if (screenshotDir is not null)
+        {
+            _ = CaptureScreenshotsAsync(screenshotDir["--screenshot=".Length..]);
+            return;
+        }
+
         _ = InitializeAsync();
     }
 
@@ -1375,6 +1385,105 @@ public partial class MainWindow : Window
         effective.DistributionRoot = ModpackCatalogLogic.ResolveEffectiveInstallRoot(
             _configuration, _modpackManifest, _userSettings);
         return effective;
+    }
+
+    /// <summary>
+    /// Режим <c>--screenshot=&lt;папка&gt;</c>: открывает каждое окно и сохраняет его в PNG,
+    /// затем завершает приложение.
+    /// </summary>
+    /// <remarks>
+    /// Сеть здесь НЕ трогаем: ни каталог, ни новости, ни переписка с поддержкой не грузятся.
+    /// Проверяется вёрстка, а прогон в CI не должен ходить на боевой сайт.
+    /// </remarks>
+    private async Task CaptureScreenshotsAsync(string directory)
+    {
+        var failures = 0;
+        try
+        {
+            Directory.CreateDirectory(directory);
+
+            var themeId = LauncherThemeCatalog.DefaultThemeId;
+            LauncherThemeBrushes.ApplyTheme(Resources, themeId);
+            SetStatus("Снимок вёрстки");
+
+            // Главное окно уже открыто — снимаем как есть.
+            failures += await CaptureAsync(this, Path.Combine(directory, "01-main.png"), close: false);
+
+            var errorException = new HttpRequestException(
+                "Этот хост неизвестен. (bl-modern.ru:443)",
+                new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.HostNotFound));
+            var errorInfo = ErrorClassifier.Classify(errorException);
+
+            var windows = new (Window Window, string Name)[]
+            {
+                (new ErrorWindow(errorInfo, "/tmp/launcher-error.log", themeId), "02-error"),
+                (new SettingsWindow(), "03-settings"),
+                (new SupportWindow(), "04-support"),
+                (new SkinWindow(), "05-skin"),
+                (new OptionalModsWindow(), "06-optional-mods")
+            };
+
+            foreach (var (window, name) in windows)
+            {
+                window.Show(this);
+                failures += await CaptureAsync(window, Path.Combine(directory, $"{name}.png"), close: true);
+            }
+
+            Console.WriteLine($"SCREENSHOTS_RESULT={(failures == 0 ? "PASS" : "FAIL")} dir={directory} failed={failures}");
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"SCREENSHOTS_RESULT=FAIL {exception.Message}");
+            failures++;
+        }
+        finally
+        {
+            Environment.ExitCode = failures == 0 ? 0 : 1;
+            _allowClose = true;
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                (Application.Current as App)?.SetTrayVisible(false);
+                desktop.Shutdown();
+            }
+        }
+    }
+
+    /// <summary>Сохраняет окно в PNG. Возвращает 1, если снять не удалось.</summary>
+    private static async Task<int> CaptureAsync(Window window, string path, bool close)
+    {
+        try
+        {
+            // Окну нужен полный проход разметки: сразу после Show размеры ещё нулевые,
+            // и RenderTargetBitmap отдал бы пустой кадр.
+            await Task.Delay(TimeSpan.FromMilliseconds(900));
+
+            var width = (int)Math.Round(window.Bounds.Width);
+            var height = (int)Math.Round(window.Bounds.Height);
+            if (width <= 0 || height <= 0)
+            {
+                Console.WriteLine($"SCREENSHOT_FAIL {Path.GetFileName(path)}: окно без размеров");
+                return 1;
+            }
+
+            using var bitmap = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
+            bitmap.Render(window);
+            bitmap.Save(path);
+
+            Console.WriteLine($"SCREENSHOT_OK {Path.GetFileName(path)} {width}x{height}");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"SCREENSHOT_FAIL {Path.GetFileName(path)}: {exception.Message}");
+            return 1;
+        }
+        finally
+        {
+            if (close)
+            {
+                window.Close();
+            }
+        }
     }
 
     /// <summary>

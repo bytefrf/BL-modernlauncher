@@ -84,6 +84,34 @@ jobs:
           echo "файлов в пакете: $(ls -1 "publish/${{ matrix.rid }}" | wc -l)"
           du -sh "publish/${{ matrix.rid }}"
 
+      # Снимки каждого окна. Ловят то, что сборка не ловит: свои Min-размеры контролов Fluent,
+      # отсутствие шрифта, потерянные ресурсы — всё это вылезает только в рантайме.
+      # Приложение снимает окна само (RenderTargetBitmap), скриншотилка ОС не нужна.
+      - name: Screenshots
+        shell: bash
+        run: |
+          set -e
+          exe="publish/${{ matrix.rid }}/Launcher.Avalonia"
+          out="$PWD/screenshots/${{ matrix.rid }}"
+          mkdir -p "$out"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # На раннере нет дисплея, а Avalonia без него не поднимет окно.
+            if ! command -v xvfb-run >/dev/null; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+            fi
+            xvfb-run -a "$exe" "--screenshot=$out" --profile=ci
+          else
+            "$exe" "--screenshot=$out" --profile=ci
+          fi
+          ls -1 "$out"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.rid }}
+          path: screenshots/${{ matrix.rid }}
+
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
