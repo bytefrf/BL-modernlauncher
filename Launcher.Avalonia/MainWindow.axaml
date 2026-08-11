@@ -569,6 +569,12 @@
                     Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource AccentBrush}"
                     BorderThickness="1" Opacity="0" IsVisible="False" IsHitTestVisible="False"
                     BoxShadow="0 0 28 0 #90000000">
+                <!-- Плавность даёт переход, а не анимация: в WPF тут был Storyboard. -->
+                <Border.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.32" />
+                    </Transitions>
+                </Border.Transitions>
                 <Grid ColumnDefinitions="Auto,13,*">
                     <Border Width="42" Height="42" CornerRadius="21" VerticalAlignment="Center"
                             Background="{DynamicResource CardAltBrush}"

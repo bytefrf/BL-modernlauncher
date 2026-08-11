@@ -35,8 +35,25 @@ public partial class MainWindow : Window
     // запуска (не докачались файлы, не та Java), позже — краш уже в игре.
     private const int LaunchSuccessThresholdSeconds = 45;
 
+    // Discord Rich Presence: те же значения, что и в WPF-версии.
+    private const string DiscordAppId = "1511335634533613598";
+    private const string DiscordIdleDetails = "TerraFirmaGreg-Modern";
+    private const string DiscordIdleState = "В лаунчере";
+    private const string DiscordPlayingDetails = "TerraFirmaGreg-Modern";
+    private const string DiscordPlayingState = "В игре";
+
     private readonly MainWindowViewModel _viewModel = new();
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(2) };
+    private readonly LauncherSoundService _soundService = new();
+    private readonly DiscordPresenceService _discordPresence = new(DiscordAppId, largeImageKey: "logo");
+
+    // Профиль игрока (время в игре, сессии, уже показанные достижения) держим в памяти:
+    // его правит и запись сессии, и синхронизация достижений.
+    private PlayerProfile _playerProfile = new();
+
+    // Тосты показываем по одному: два одновременно перекрыли бы друг друга.
+    private readonly Queue<(string Icon, string Title, string Description)> _achievementToasts = new();
+    private bool _achievementToastRunning;
 
     private LauncherConfiguration? _configuration;
     private UserSettings _userSettings = new();
@@ -112,6 +129,8 @@ public partial class MainWindow : Window
         {
             _configuration = LauncherConfiguration.Load(AppContext.BaseDirectory);
             _userSettings = UserSettings.Load(_configuration.GetUserSettingsPath());
+            _playerProfile = PlayerProfile.Load(_configuration.GetPlayerProfilePath());
+            _soundService.Enabled = _userSettings.SoundEnabled;
 
             LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
             SetUsername(_userSettings.Username);
@@ -132,6 +151,7 @@ public partial class MainWindow : Window
 
             _ = TrackTelemetryAsync("launcher_started");
             _ = TrackTelemetryAsync("system_info", BuildSystemInfoProperties());
+            _ = InitializeDiscordPresenceAsync();
         }
         catch (Exception exception)
         {
@@ -785,6 +805,11 @@ public partial class MainWindow : Window
     {
         _allowClose = true;
         (Application.Current as App)?.SetTrayVisible(false);
+
+        // Соединение с Discord держит именованный канал: без освобождения он остаётся
+        // висеть до сборки мусора.
+        _discordPresence.Dispose();
+
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Shutdown();
@@ -974,8 +999,17 @@ public partial class MainWindow : Window
         _userSettings.Save(_configuration.GetUserSettingsPath());
 
         LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
+        // Галочку звука надо перенести в сам сервис, иначе она сохраняется, но ни на что не влияет.
+        _soundService.Enabled = _userSettings.SoundEnabled;
         UpdatePrimaryActionButton();
         SetStatus("Настройки сохранены");
+
+        _ = TrackTelemetryAsync("settings_saved", new Dictionary<string, object?>
+        {
+            ["memoryMb"] = _userSettings.MemoryMb,
+            ["themeId"] = _userSettings.ThemeId,
+            ["soundEnabled"] = _userSettings.SoundEnabled
+        });
     }
 
     private void OpenNewsButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
@@ -1090,6 +1124,13 @@ public partial class MainWindow : Window
                 {
                     achievements = SiteAchievementEngine.Build(response);
                     level = SiteAchievementEngine.BuildLevel(achievements);
+
+                    // Не больше трёх тостов подряд — как в WPF: остальное игрок увидит в списке.
+                    foreach (var unlocked in TrackNewSiteAchievements(achievements).Take(3))
+                    {
+                        EnqueueAchievementToast(
+                            unlocked.Icon, unlocked.Name, $"{unlocked.Description} · +{unlocked.Xp} XP");
+                    }
                 }
             }
             catch
@@ -1251,13 +1292,15 @@ public partial class MainWindow : Window
 
             var launchManifest = LauncherManifestFactory.CreateArchiveModeLaunchManifest(_modpackManifest, _configuration);
 
-            await InstallGameFilesAsync();
+            await InstallGameFilesAsync(launchAttemptId, "launch");
             UpdatePrimaryActionButton();
 
             // После установки/обновления запуск не делаем — как и в WPF-версии,
             // игрок нажимает кнопку второй раз, уже «Играть».
             if (_primaryActionState != PrimaryActionState.Play)
             {
+                // Звук «готово»: установка длинная, игрок за это время уходит в другое окно.
+                _soundService.PlayReady();
                 return;
             }
 
@@ -1304,6 +1347,7 @@ public partial class MainWindow : Window
                 return;
             }
 
+            UpdateDiscordPresence(DiscordPlayingDetails, DiscordPlayingState);
             MinimizeToTray();
 
             // Ждём завершения игры в фоне: краш нужно разобрать и показать игроку.
@@ -1349,7 +1393,12 @@ public partial class MainWindow : Window
             }
 
             await exitTask;
+            UpdateDiscordPresence(DiscordIdleDetails, DiscordIdleState);
             var runtime = DateTime.UtcNow - startedAt;
+
+            // Сессия засчитывается в любом случае — и удачная, и закончившаяся крашем:
+            // от этого зависят время по сборкам и достижения.
+            RecordPlaySession(runtime, crashed: process.ExitCode != 0, startedAtLocal: startedAt.ToLocalTime());
 
             // Analyze читает логи синхронно — уводим с потока интерфейса, чтобы не подвесить окно.
             var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
@@ -1487,6 +1536,144 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task InitializeDiscordPresenceAsync()
+    {
+        try
+        {
+            if (await _discordPresence.TryConnectAsync())
+            {
+                await _discordPresence.SetPresenceAsync(DiscordIdleDetails, DiscordIdleState);
+            }
+        }
+        catch
+        {
+            // Discord может быть не запущен — Rich Presence не критичен.
+        }
+    }
+
+    private void UpdateDiscordPresence(string details, string state)
+        => _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _discordPresence.SetPresenceAsync(details, state);
+            }
+            catch
+            {
+                // Discord закрыли во время игры — не наша забота.
+            }
+        });
+
+    /// <summary>
+    /// Записывает завершённую сессию в профиль и обновляет кабинет. Вызывается из фонового
+    /// наблюдения за игрой, поэтому интерфейс трогаем через диспетчер.
+    /// </summary>
+    private void RecordPlaySession(TimeSpan runtime, bool crashed, DateTime startedAtLocal)
+    {
+        if (_configuration is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var modpackId = !string.IsNullOrWhiteSpace(_selectedModpackId)
+                ? _selectedModpackId
+                : _modpackManifest?.Modpack.Id ?? "default";
+            var modpackName = _modpackManifest?.Modpack.Name ?? modpackId;
+
+            _playerProfile.ClientId = _userSettings.ClientId;
+            _playerProfile.RecordSession(modpackId, modpackName, runtime, crashed, startedAtLocal);
+            _playerProfile.Save(_configuration.GetPlayerProfilePath());
+
+            // После сессии статистика на сайте изменилась — тянем достижения заново,
+            // и если что-то открылось, покажем тост.
+            Dispatcher.UIThread.Post(() => _ = RefreshAccountAsync());
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.UIThread.Post(() => SetStatus($"Не удалось обновить профиль: {exception.Message}"));
+        }
+    }
+
+    /// <summary>
+    /// Сравнивает полученные достижения с тем, что лаунчер уже видел, и возвращает новые.
+    /// Первая синхронизация проходит молча — иначе игрок получил бы полсотни тостов подряд.
+    /// </summary>
+    private IReadOnlyList<SiteAchievement> TrackNewSiteAchievements(IReadOnlyList<SiteAchievement> achievements)
+    {
+        var earned = achievements.Where(achievement => achievement.Earned).ToList();
+        var firstSync = !_playerProfile.SiteSynced;
+        var fresh = earned
+            .Where(achievement => !_playerProfile.SiteAchievements.ContainsKey(achievement.Id))
+            .ToList();
+
+        foreach (var achievement in earned)
+        {
+            _playerProfile.SiteAchievements.TryAdd(achievement.Id, DateTime.UtcNow);
+        }
+
+        _playerProfile.SiteSynced = true;
+        _playerProfile.ClientId = _userSettings.ClientId;
+
+        try
+        {
+            if (_configuration is not null)
+            {
+                _playerProfile.Save(_configuration.GetPlayerProfilePath());
+            }
+        }
+        catch
+        {
+            // Не сохранился профиль — в худшем случае тост покажется ещё раз.
+        }
+
+        return firstSync ? [] : fresh;
+    }
+
+    private void EnqueueAchievementToast(string icon, string title, string description)
+    {
+        _achievementToasts.Enqueue((icon, title, description));
+        if (!_achievementToastRunning)
+        {
+            _ = ShowAchievementToastsAsync();
+        }
+    }
+
+    /// <summary>
+    /// Показывает очередь тостов по одному: появление, 4,5 секунды на чтение, исчезновение.
+    /// Плавность даёт переход Opacity, объявленный в разметке.
+    /// </summary>
+    private async Task ShowAchievementToastsAsync()
+    {
+        _achievementToastRunning = true;
+        var toast = this.FindControl<Border>("AchievementToast")!;
+
+        try
+        {
+            while (_achievementToasts.Count > 0)
+            {
+                var (icon, title, description) = _achievementToasts.Dequeue();
+                this.FindControl<TextBlock>("AchievementToastIcon")!.Text = icon;
+                this.FindControl<TextBlock>("AchievementToastTitle")!.Text = title;
+                this.FindControl<TextBlock>("AchievementToastDescription")!.Text = description;
+
+                toast.IsVisible = true;
+                toast.Opacity = 1;
+                _soundService.PlayAchievement();
+
+                await Task.Delay(TimeSpan.FromSeconds(4.5));
+                toast.Opacity = 0;
+                await Task.Delay(TimeSpan.FromMilliseconds(320));
+                toast.IsVisible = false;
+            }
+        }
+        finally
+        {
+            _achievementToastRunning = false;
+        }
+    }
+
     /// <summary>
     /// Сводка о машине игрока. Размер экрана берём у Avalonia: <c>SystemParameters</c> из WPF
     /// на Linux и macOS не существует.
@@ -1598,9 +1785,16 @@ public partial class MainWindow : Window
     /// <summary>
     /// Ставит или обновляет файлы игры через общий с WPF оркестратор.
     /// </summary>
-    private async Task InstallGameFilesAsync()
+    private async Task InstallGameFilesAsync(string operationId = "", string trigger = "launch")
     {
         var progressBar = this.FindControl<ProgressBar>("LauncherProgressBar")!;
+
+        _ = TrackTelemetryAsync("install_started", new Dictionary<string, object?>
+        {
+            ["trigger"] = trigger,
+            ["operationId"] = operationId,
+            ["force"] = false
+        });
 
         // Прогресс приходит из фоновых потоков — Avalonia сам возвращает его в поток интерфейса
         // через Progress<T>, созданный здесь.
@@ -1629,6 +1823,17 @@ public partial class MainWindow : Window
 
         progressBar.Value = 100;
         SetStatus(outcome.StatusText);
+
+        _ = TrackTelemetryAsync("install_completed", new Dictionary<string, object?>
+        {
+            ["mode"] = outcome.Mode,
+            ["installed"] = outcome.Installed,
+            ["durationMs"] = outcome.DurationMs,
+            ["changedFiles"] = outcome.ChangedFiles,
+            ["trigger"] = trigger,
+            ["operationId"] = operationId,
+            ["force"] = false
+        });
     }
 
     /// <summary>
@@ -1661,6 +1866,11 @@ public partial class MainWindow : Window
             var themeId = LauncherThemeCatalog.DefaultThemeId;
             LauncherThemeBrushes.ApplyTheme(Resources, themeId);
             SetStatus("Снимок вёрстки");
+
+            // Тост достижения попадает в снимок главного окна: иначе его вёрстку никак
+            // не проверить, не сыграв настоящую сессию. Звук при этом не нужен.
+            _soundService.Enabled = false;
+            EnqueueAchievementToast("⏱", "Время в игре VI", "Достичь 100 ч · +120 XP");
 
             // Главное окно уже открыто — снимаем как есть.
             failures += await CaptureAsync(this, Path.Combine(directory, "01-main.png"), close: false);

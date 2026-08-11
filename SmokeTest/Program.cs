@@ -283,6 +283,25 @@ if (args.Length >= 1 && args[0].Equals("--error-report", StringComparison.Ordina
     return;
 }
 
+// Интерфейсные звуки: SmokeTest --sound
+// Проверка на слух — синтез общий, а вот проигрыватель у каждой ОС свой
+// (winmm на Windows, afplay/paplay/aplay на Unix).
+if (args.Length >= 1 && args[0].Equals("--sound", StringComparison.OrdinalIgnoreCase))
+{
+    var sounds = new LauncherSoundService { Enabled = true };
+
+    Console.WriteLine("Звук готовности сборки...");
+    sounds.PlayReady();
+    await Task.Delay(1500);
+
+    Console.WriteLine("Звук достижения...");
+    sounds.PlayAchievement();
+    await Task.Delay(2000);
+
+    Console.WriteLine("SOUND_DONE (если тишина — в системе нет проигрывателя или звукового выхода)");
+    return;
+}
+
 // Разбор крашей игры: SmokeTest --crash (без сети)
 // Проверяем распознавание причин по логам и расшифровку кодов выхода. Отдельный интерес —
 // Linux/macOS: там другие имена драйверов и другие коды (128+сигнал).

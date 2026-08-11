@@ -1,15 +1,21 @@
 using System.Buffers.Binary;
 using System.IO.Pipes;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
 namespace Launcher.App.Services;
 
 /// <summary>
-/// Минимальный клиент Discord Rich Presence поверх локального named pipe (discord-ipc-*).
+/// Минимальный клиент Discord Rich Presence поверх локального канала (discord-ipc-*).
 /// Не требует внешних зависимостей и тихо отключается, если Discord не запущен
 /// или Application ID не задан.
 /// </summary>
+/// <remarks>
+/// Транспорт зависит от системы: на Windows это именованный канал, на Linux и macOS —
+/// unix-сокет в рантайм-каталоге. Именованные каналы .NET на Unix лежат в своём месте
+/// и с сокетом Discord не совпадают, поэтому одной реализацией не обойтись.
+/// </remarks>
 public sealed class DiscordPresenceService : IDisposable
 {
     private const int OpHandshake = 0;
@@ -22,7 +28,7 @@ public sealed class DiscordPresenceService : IDisposable
     private readonly string _largeImageKey;
     private readonly string _largeImageText;
 
-    private NamedPipeClientStream? _pipe;
+    private Stream? _pipe;
     private bool _connected;
     private bool _disposed;
 
@@ -59,9 +65,11 @@ public sealed class DiscordPresenceService : IDisposable
             {
                 try
                 {
-                    var pipe = new NamedPipeClientStream(".", $"discord-ipc-{index}", PipeDirection.InOut, PipeOptions.Asynchronous);
-                    await pipe.ConnectAsync(1000, cancellationToken);
-                    _pipe = pipe;
+                    _pipe = await OpenTransportAsync(index, cancellationToken);
+                    if (_pipe is null)
+                    {
+                        continue;
+                    }
 
                     var handshake = JsonSerializer.Serialize(new { v = 1, client_id = _clientId });
                     await WriteFrameAsync(OpHandshake, handshake, cancellationToken);
@@ -145,6 +153,80 @@ public sealed class DiscordPresenceService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Открывает канал к Discord под номером <paramref name="index"/> или возвращает
+    /// <c>null</c>, если такого канала нет.
+    /// </summary>
+    private static async Task<Stream?> OpenTransportAsync(int index, CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var pipe = new NamedPipeClientStream(".", $"discord-ipc-{index}", PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(1000, cancellationToken);
+            return pipe;
+        }
+
+        foreach (var path in EnumerateUnixSocketPaths(index))
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+                await socket.ConnectAsync(new UnixDomainSocketEndPoint(path), cancellationToken);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                // Сокет есть, но не отвечает (Discord закрывается) — пробуем следующий путь.
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Где Discord держит сокет на Linux и macOS. Помимо рантайм-каталога проверяем подпапки
+    /// Flatpak и Snap: в этих упаковках сокет лежит НЕ в корне, и без них Rich Presence
+    /// просто молчит у части игроков.
+    /// </summary>
+    private static IEnumerable<string> EnumerateUnixSocketPaths(int index)
+    {
+        var roots = new[]
+        {
+            Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR"),
+            Environment.GetEnvironmentVariable("TMPDIR"),
+            Environment.GetEnvironmentVariable("TMP"),
+            Environment.GetEnvironmentVariable("TEMP"),
+            "/tmp"
+        };
+
+        var subdirectories = new[]
+        {
+            string.Empty,
+            "app/com.discordapp.Discord",
+            "app/com.discordapp.DiscordCanary",
+            "snap.discord",
+            "snap.discord-canary"
+        };
+
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                continue;
+            }
+
+            foreach (var subdirectory in subdirectories)
+            {
+                yield return Path.Combine(root.TrimEnd('/'), subdirectory, $"discord-ipc-{index}");
+            }
+        }
+    }
+
     private async Task WriteFrameAsync(int opcode, string json, CancellationToken cancellationToken)
     {
         if (_pipe is null)
@@ -164,7 +246,7 @@ public sealed class DiscordPresenceService : IDisposable
 
     private async Task DrainFrameAsync(CancellationToken cancellationToken)
     {
-        if (_pipe is null || !_pipe.IsConnected)
+        if (_pipe is null)
         {
             return;
         }
@@ -234,7 +316,7 @@ public sealed class DiscordPresenceService : IDisposable
         _disposed = true;
         try
         {
-            if (_pipe is { IsConnected: true })
+            if (_pipe is not null)
             {
                 var close = JsonSerializer.Serialize(new { v = 1, client_id = _clientId });
                 WriteFrameAsync(OpClose, close, CancellationToken.None).GetAwaiter().GetResult();

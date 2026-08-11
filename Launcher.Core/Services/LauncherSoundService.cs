@@ -1,4 +1,5 @@
-using System.Media;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace Launcher.App.Services;
 
@@ -7,6 +8,11 @@ namespace Launcher.App.Services;
 /// в репозитории и в релизе нет бинарных ассетов, а single-file публикация не ломается.
 /// Любая ошибка воспроизведения глушится: звук — украшение, он не должен мешать игре.
 /// </summary>
+/// <remarks>
+/// Кроссплатформенность: <c>System.Media.SoundPlayer</c> есть только на Windows, поэтому
+/// на Windows зовём <c>winmm.dll</c> напрямую, а на Linux и macOS — системный проигрыватель
+/// (<c>paplay</c>/<c>aplay</c>/<c>afplay</c>). Нет ни одного из них — просто тишина.
+/// </remarks>
 public sealed class LauncherSoundService
 {
     private const int SampleRate = 44100;
@@ -21,6 +27,22 @@ public sealed class LauncherSoundService
 
     public void PlayReady() => Play(_ready);
 
+    [DllImport("winmm.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool PlaySound(string? sound, IntPtr module, uint flags);
+
+    private const uint SndFilename = 0x00020000;
+    private const uint SndAsync = 0x0001;
+    private const uint SndNoDefault = 0x0002;
+
+    // Проигрыватели Unix в порядке предпочтения. Первый найденный и используется.
+    private static readonly (string File, string Args)[] UnixPlayers =
+    [
+        ("afplay", "\"{0}\""),          // macOS, входит в систему
+        ("paplay", "\"{0}\""),          // PulseAudio / PipeWire — на большинстве десктопных Linux
+        ("aplay", "-q \"{0}\""),        // ALSA напрямую
+        ("ffplay", "-nodisp -autoexit -loglevel quiet \"{0}\"")
+    ];
+
     private void Play(Lazy<byte[]> sound)
     {
         if (!Enabled)
@@ -28,20 +50,71 @@ public sealed class LauncherSoundService
             return;
         }
 
-        // PlaySync в фоне: Play() асинхронный и обрывается, если поток/плеер освободить сразу.
+        // В фоне: проигрывание не должно задерживать интерфейс.
         _ = Task.Run(() =>
         {
             try
             {
-                using var stream = new MemoryStream(sound.Value, writable: false);
-                using var player = new SoundPlayer(stream);
-                player.PlaySync();
+                // И winmm, и проигрыватели Unix читают ФАЙЛ, а не поток. Пишем во временный
+                // и переиспользуем: звуки короткие и постоянные, писать их каждый раз незачем.
+                var path = EnsureFile(sound);
+
+                if (OperatingSystem.IsWindows())
+                {
+                    PlaySound(path, IntPtr.Zero, SndFilename | SndAsync | SndNoDefault);
+                    return;
+                }
+
+                PlayUnix(path);
             }
             catch
             {
-                // Нет звуковой карты, занят выход, урезанная Windows — молча пропускаем.
+                // Нет звуковой карты, нет проигрывателя, занят выход — молча пропускаем.
             }
         });
+    }
+
+    private readonly Dictionary<Lazy<byte[]>, string> _files = [];
+
+    private string EnsureFile(Lazy<byte[]> sound)
+    {
+        lock (_files)
+        {
+            if (_files.TryGetValue(sound, out var existing) && File.Exists(existing))
+            {
+                return existing;
+            }
+
+            var path = Path.Combine(Path.GetTempPath(), $"bl-launcher-{Guid.NewGuid():N}.wav");
+            File.WriteAllBytes(path, sound.Value);
+            _files[sound] = path;
+            return path;
+        }
+    }
+
+    private static void PlayUnix(string path)
+    {
+        foreach (var (file, argsFormat) in UnixPlayers)
+        {
+            try
+            {
+                using var process = Process.Start(new ProcessStartInfo(file, string.Format(argsFormat, path))
+                {
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                });
+
+                if (process is not null)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // Этого проигрывателя в системе нет — пробуем следующий.
+            }
+        }
     }
 
     /// <summary>
