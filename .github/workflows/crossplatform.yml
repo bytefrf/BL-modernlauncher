@@ -12,6 +12,11 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      full_check:
+        description: "Полный прогон: установить сборку (~2,8 ГБ) и запустить игру"
+        type: boolean
+        default: false
 
 jobs:
   checks:
@@ -167,6 +172,21 @@ jobs:
 
           echo "--- окна из установленного бандла ---"
           "$app/Contents/MacOS/Launcher.Avalonia" "--screenshot=$PWD/screenshots/${{ matrix.rid }}-installed" --profile=ci 2>&1 | tail -3
+
+      # Полный прогон по требованию: установка сборки целиком и запуск игры.
+      # На каждый пуш не гоняем — это ~10 минут и несколько гигабайт трафика.
+      - name: Full install and launch
+        if: inputs.full_check
+        shell: bash
+        run: |
+          set -e
+          exe="publish/${{ matrix.rid }}/Launcher.Avalonia"
+          cp packaging/ci-launcher.config.json "$(dirname "$exe")/launcher.config.json"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$exe" --check-launch --watch-seconds=90 --profile=fullci
+          else
+            "$exe" --check-launch --watch-seconds=90 --profile=fullci
+          fi
 
       - name: Upload installable packages
         if: always()
