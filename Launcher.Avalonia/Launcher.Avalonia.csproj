@@ -23,6 +23,24 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ICU В КОМПЛЕКТЕ ДЛЯ LINUX.
+         На чистой Ubuntu .NET падает ещё до появления окна: «Couldn't find a valid ICU package».
+         Проверено живьём — игрок увидел бы мгновенный выход без единого сообщения.
+         Системный libicu ставить нельзя (это зависимость дистрибутива, а лаунчер — портативный),
+         а InvariantGlobalization сломал бы сравнение и регистр кириллицы. Поэтому ICU кладётся
+         внутрь пакета. На Windows и macOS ICU есть в системе всегда — там пакет не нужен. -->
+    <PackageReference Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3"
+                      Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+    <!-- Версия обязана совпадать с ПОЛНОЙ версией пакета выше: .NET ищет файл
+         libicudata.so.<значение>, а он называется libicudata.so.72.1.0.3.
+         Со значением «72.1» приложение падало с «Failed to load app-local ICU». -->
+    <RuntimeHostConfigurationOption Include="System.Globalization.AppLocalIcu" Value="72.1.0.3" Trim="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
