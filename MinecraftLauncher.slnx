@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="Launcher.Core/Launcher.Core.csproj" />
   <Project Path="Launcher.App/Launcher.App.csproj" />
+  <Project Path="Launcher.Avalonia/Launcher.Avalonia.csproj" />
   <Project Path="Launcher.Bootstrapper/Launcher.Bootstrapper.csproj" />
 </Solution>

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 без -windows: ядро обязано собираться под Linux и macOS. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Launcher.App</RootNamespace>
+    <!-- Ядро переехало из Launcher.App, но пространства имён остались прежними:
+         так перенос не требует правок ни в одном месте вызова. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Ресурсы переезжают вместе с кодом, который их читает: ModpackManifestClient и
+         MultiplayerServerListService зовут Assembly.GetExecutingAssembly(), то есть ищут
+         ресурс в СВОЕЙ сборке. LogicalName сохранён прежним. -->
+    <EmbeddedResource Include="..\modpack-manifest.json">
+      <LogicalName>Launcher.App.Defaults.modpack-manifest.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Assets\servers.dat">
+      <LogicalName>Launcher.App.Defaults.servers.dat</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

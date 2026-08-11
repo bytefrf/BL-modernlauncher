@@ -1,0 +1,38 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Launcher.Avalonia.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <!-- Иконка в трее: лаунчер туда сворачивается при запуске игры.
+         Объявляется на уровне приложения — у окна своей иконки в трее в Avalonia нет. -->
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <!-- Без x:Name: TrayIcon его не поддерживает. Иконку код берёт через TrayIcon.GetIcons. -->
+            <TrayIcon Icon="avares://Launcher.Avalonia/Assets/launcher.ico"
+                      ToolTipText="BL-modern TFGM"
+                      IsVisible="False"
+                      Clicked="TrayIcon_Clicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Открыть лаунчер" Click="TrayOpen_Click" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Выход" Click="TrayExit_Click" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://Launcher.Avalonia/Styles/ControlThemes.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+</Application>

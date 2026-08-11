@@ -1,0 +1,194 @@
+<Window x:Class="Launcher.App.SkinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Скин"
+        Icon="/Sprite-0001.png"
+        Width="720"
+        Height="560"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    <Window.Resources>
+        <Style x:Key="FlatButton" TargetType="Button">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" CornerRadius="12" Padding="18,0"
+                                Background="{DynamicResource SoftButtonBackgroundBrush}"
+                                BorderBrush="{DynamicResource SoftButtonBorderBrush}" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource FlatButton}">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="#101815" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" CornerRadius="12" Padding="18,0"
+                                Background="{DynamicResource AccentBrush}" BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.9" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TitleCloseButton" TargetType="Button">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" CornerRadius="8" Background="Transparent">
+                            <TextBlock Text="&#x2715;" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{TemplateBinding Foreground}" FontSize="{TemplateBinding FontSize}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#E03B4A" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{DynamicResource TitleBarBorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Height="46" Background="{DynamicResource TitleBarBackgroundBrush}"
+                    BorderBrush="{DynamicResource TitleBarBorderBrush}" BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid Margin="14,0,10,0">
+                    <TextBlock Text="Скин игрока" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextBrush}" />
+                    <Button HorizontalAlignment="Right" Style="{StaticResource TitleCloseButton}"
+                            Click="CloseButton_Click" ToolTip="Закрыть" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="22,18,22,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- ПРЕВЬЮ -->
+                <Border Grid.Column="0" Width="220" CornerRadius="18" Padding="16"
+                        Background="{DynamicResource CardAltBrush}"
+                        BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock x:Name="PreviewCaptionTextBlock" Text="Текущий скин" FontSize="12"
+                                   HorizontalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
+                        <Border Height="300" Margin="0,12,0,0">
+                            <Image x:Name="SkinPreviewImage" Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                        </Border>
+                        <TextBlock x:Name="PreviewEmptyTextBlock" Text="Скин не установлен — в игре используется стандартный."
+                                   FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0"
+                                   Foreground="{DynamicResource MutedBrush}" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ФОРМА -->
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Сменить скин" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextBrush}" />
+                    <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}"
+                               Text="PNG 64×64 (или старый 64×32), до 250 КБ. Скин применится на всех серверах проекта." />
+
+                    <TextBlock Text="Файл скина" FontSize="12" Margin="0,18,0,0" Foreground="{DynamicResource MutedBrush}" />
+                    <Grid Margin="0,6,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border CornerRadius="10" Padding="12,0" Height="40"
+                                Background="{DynamicResource TextBoxBackgroundBrush}"
+                                BorderBrush="{DynamicResource TextBoxBorderBrush}" BorderThickness="1">
+                            <TextBlock x:Name="FileNameTextBlock" VerticalAlignment="Center" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}"
+                                       Text="Файл не выбран" />
+                        </Border>
+                        <Button Grid.Column="2" Width="130" Style="{StaticResource FlatButton}"
+                                Click="BrowseButton_Click" Content="Выбрать PNG" />
+                    </Grid>
+
+                    <TextBlock Text="Модель рук" FontSize="12" Margin="0,16,0,0" Foreground="{DynamicResource MutedBrush}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <RadioButton x:Name="ClassicRadio" IsChecked="True" GroupName="Model" Content="Классическая (4 px)"
+                                     Foreground="{DynamicResource TextBrush}" Checked="Model_Changed" />
+                        <RadioButton x:Name="SlimRadio" Margin="20,0,0,0" GroupName="Model" Content="Тонкая / Alex (3 px)"
+                                     Foreground="{DynamicResource TextBrush}" Checked="Model_Changed" />
+                    </StackPanel>
+
+                    <TextBlock Text="Пароль от аккаунта на сайте" FontSize="12" Margin="0,18,0,0"
+                               Foreground="{DynamicResource MutedBrush}" />
+                    <PasswordBox x:Name="PasswordBox" Height="40" Margin="0,6,0,0" FontSize="13"
+                                 Background="{DynamicResource TextBoxBackgroundBrush}"
+                                 BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                 Foreground="{DynamicResource TextBrush}" Padding="10,0" VerticalContentAlignment="Center" />
+                    <TextBlock Margin="0,6,0,0" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"
+                               Text="Пароль нужен серверу для подтверждения, что скин меняешь именно ты. Лаунчер его не сохраняет и не пишет в логи." />
+
+                    <TextBlock x:Name="StatusTextBlock" Margin="0,14,0,0" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AccentBrush}" Text="" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="2" Margin="22,16,22,18">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button x:Name="ResetButton" Width="170" Style="{StaticResource FlatButton}"
+                        Click="ResetButton_Click" Content="Сбросить скин" />
+                <Button Grid.Column="2" Width="120" Style="{StaticResource FlatButton}"
+                        Click="CloseButton_Click" Content="Закрыть" />
+                <Button x:Name="UploadButton" Grid.Column="4" Width="190" Style="{StaticResource AccentButton}"
+                        Click="UploadButton_Click" Content="Загрузить скин" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

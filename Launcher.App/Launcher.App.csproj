@@ -3,7 +3,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <Version>1.0.66</Version>
+    <Version>1.3.2</Version>
+    <!-- Без +git-suffix в ProductVersion: иначе бутстраппер не может распарсить версию и обновляется бесконечно. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>launcher.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -21,12 +23,8 @@
     <Resource Include="background.png" />
     <Resource Include="Sprite-0001.png" />
     <Resource Include="Sprite-0002.png" />
-    <EmbeddedResource Include="Assets\servers.dat">
-      <LogicalName>Launcher.App.Defaults.servers.dat</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="..\modpack-manifest.json">
-      <LogicalName>Launcher.App.Defaults.modpack-manifest.json</LogicalName>
-    </EmbeddedResource>
+    <!-- servers.dat и modpack-manifest.json переехали в Launcher.Core вместе с кодом,
+         который их читает через Assembly.GetExecutingAssembly(). -->
     <EmbeddedResource Include="Screenshots\*.png">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
@@ -39,6 +37,10 @@
     <EmbeddedResource Include="Screenshots\*.webp">
       <LogicalName>Launcher.App.Screenshots.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

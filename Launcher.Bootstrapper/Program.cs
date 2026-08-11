@@ -4,8 +4,10 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using WinForms = System.Windows.Forms;
 
@@ -21,6 +23,22 @@ internal static class Program
         WinForms.Application.EnableVisualStyles();
         WinForms.Application.SetCompatibleTextRenderingDefault(false);
 
+        try
+        {
+            await RunAsync(args);
+        }
+        catch (OperationCanceledException)
+        {
+            // Папка установки не выбрана пользователем — это не сбой, выходим тихо.
+        }
+        catch (Exception exception)
+        {
+            ShowFatalError(exception);
+        }
+    }
+
+    private static async Task RunAsync(string[] args)
+    {
         using var httpClient = new HttpClient();
 
         var bootstrapperDirectory = AppContext.BaseDirectory;
@@ -43,10 +61,15 @@ internal static class Program
             return;
         }
 
-        await EnsureVisualCppRuntimeAsync(httpClient);
-
+        // ВАЖНО: окно выбора папки (FolderBrowserDialog — Vista COM-диалог) обязано открываться
+        // на STA-потоке. Main помечен [STAThread], но это async: после первого await продолжение
+        // уходит на поток пула (не STA), и COM-диалог падает с ThreadStateException.
+        // Поэтому выбор папки делаем ДО любого await, пока мы гарантированно на STA-потоке,
+        // а проверку Visual C++ (у неё внутри есть await) — уже после.
         var launcherInstallDirectory = EnsureLauncherInstallDirectory(stateStore, configuration);
         Directory.CreateDirectory(launcherInstallDirectory);
+
+        await EnsureVisualCppRuntimeAsync(httpClient);
 
         ApplyPendingLauncherUpdate(launcherInstallDirectory);
         await EnsureLauncherInstalledAsync(httpClient, configuration, launcherInstallDirectory, bootstrapperDirectory);
@@ -90,6 +113,208 @@ internal static class Program
             catch
             {
             }
+        }
+    }
+
+    // Защитная сетка: любое необработанное исключение в запуске (нет интернета, сервер вернул
+    // ошибку, занят файл лаунчера и т.п.) раньше молча валило BL-modern.exe с кодом 0xe0434352 —
+    // пользователь видел «ничего не открылось». Теперь пишем лог и показываем понятное сообщение.
+    private const string TelemetryEndpoint = "https://bl-modern.ru/api/telemetry.php";
+
+    private static void ShowFatalError(Exception exception)
+    {
+        TryWriteBootstrapperErrorLog(exception);
+        TrySendCrashTelemetry(exception);
+        try
+        {
+            WinForms.MessageBox.Show(
+                BuildFatalUserMessage(exception),
+                "BL-modern TFGM — не удалось запустить",
+                WinForms.MessageBoxButtons.OK,
+                WinForms.MessageBoxIcon.Error);
+        }
+        catch
+        {
+            // Если даже окно показать нельзя — лог уже записан, просто выходим.
+        }
+    }
+
+    private static string BuildFatalUserMessage(Exception exception)
+    {
+        switch (exception)
+        {
+            case IOException ioException when ioException.Message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase)
+                                              || ioException.Message.Contains("используется другим процессом", StringComparison.OrdinalIgnoreCase):
+                return "Лаунчер уже запущен, и его файлы заняты.\n\n" +
+                       "Закрой лаунчер полностью — в том числе значок рядом с часами (в трее), — и запусти снова.";
+            case HttpRequestException httpException when IsHostNotFound(httpException):
+                return "Не удалось подключиться к bl-modern.ru.\n\n" +
+                       "Проверь интернет или DNS и запусти лаунчер ещё раз.";
+            case HttpRequestException:
+                return "Сервер лаунчера временно недоступен.\n\n" +
+                       "Попробуй запустить лаунчер ещё раз через несколько минут.";
+            case TaskCanceledException:
+                return "Сервер лаунчера слишком долго не отвечает.\n\n" +
+                       "Проверь интернет и попробуй ещё раз.";
+            default:
+                return "При запуске лаунчера произошла ошибка:\n\n" + exception.Message;
+        }
+    }
+
+    private static bool IsHostNotFound(Exception exception)
+    {
+        return exception is System.Net.Sockets.SocketException
+                {
+                    SocketErrorCode: System.Net.Sockets.SocketError.HostNotFound
+                        or System.Net.Sockets.SocketError.TryAgain
+                        or System.Net.Sockets.SocketError.NoData
+                }
+            || (exception.InnerException is not null && IsHostNotFound(exception.InnerException));
+    }
+
+    // Бутстраппер — отдельный процесс без общего кода с Launcher.App, поэтому шлёт телеметрию краша
+    // сам, синхронно (процесс вот-вот завершится — fire-and-forget не успел бы уйти). clientId и
+    // согласие на телеметрию берём из настроек установленного лаунчера; если их нет — анонимный
+    // машинный хэш. Так краши бутстраппера (которые раньше были полностью невидимы) попадают в
+    // тот же telemetry.php, что и события Launcher.App.
+    private static void TrySendCrashTelemetry(Exception exception)
+    {
+        try
+        {
+            var (clientId, telemetryEnabled) = ReadTelemetryIdentity();
+            if (!telemetryEnabled)
+            {
+                return;
+            }
+
+            var properties = new Dictionary<string, object?>
+            {
+                ["exceptionType"] = exception.GetType().FullName,
+                ["site"] = ResolveCrashSite(exception),
+                ["message"] = SanitizeTelemetryText(exception.Message),
+                ["innerType"] = exception.InnerException?.GetType().FullName
+            };
+
+            var envelope = new
+            {
+                clientId,
+                launcherVersion = ResolveBootstrapperVersion(),
+                modpackVersion = "unknown",
+                osVersion = Environment.OSVersion.VersionString,
+                events = new[]
+                {
+                    new { name = "bootstrapper_crash", timestamp = DateTime.UtcNow, properties }
+                }
+            };
+
+            var json = JsonSerializer.Serialize(envelope, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            client.PostAsync(TelemetryEndpoint, content).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Телеметрия не должна мешать показу ошибки и выходу.
+        }
+    }
+
+    private static (string ClientId, bool TelemetryEnabled) ReadTelemetryIdentity()
+    {
+        try
+        {
+            var settingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "ForgeLauncher", ".launcher", "user-settings.json");
+            if (File.Exists(settingsPath))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(settingsPath));
+                var root = document.RootElement;
+                var enabled = !root.TryGetProperty("telemetryEnabled", out var enabledElement) || enabledElement.GetBoolean();
+                var clientId = root.TryGetProperty("clientId", out var idElement) ? idElement.GetString() : null;
+                return (string.IsNullOrWhiteSpace(clientId) ? StableMachineId() : clientId!, enabled);
+            }
+        }
+        catch
+        {
+        }
+
+        return (StableMachineId(), true);
+    }
+
+    private static string StableMachineId()
+    {
+        try
+        {
+            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "|" + Environment.UserName));
+            return "m-" + Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+        }
+        catch
+        {
+            return "m-unknown";
+        }
+    }
+
+    private static string ResolveBootstrapperVersion()
+    {
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+        return string.IsNullOrWhiteSpace(version) ? "unknown" : version;
+    }
+
+    // Верхний кадр стека из Launcher.Bootstrapper.Program — чтобы краши группировались по месту
+    // (ApplyPendingLauncherUpdate / EnsureLauncherInstalledAsync / ...), а не сваливались в одну кучу.
+    private static string ResolveCrashSite(Exception exception)
+    {
+        var stack = exception.StackTrace ?? string.Empty;
+        foreach (var line in stack.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            const string marker = "Launcher.Bootstrapper.Program.";
+            var markerIndex = trimmed.IndexOf(marker, StringComparison.Ordinal);
+            if (markerIndex < 0)
+            {
+                continue;
+            }
+
+            var start = markerIndex + marker.Length;
+            var end = trimmed.IndexOf('(', start);
+            if (end > start)
+            {
+                return trimmed[start..end].Trim();
+            }
+        }
+
+        return "unknown";
+    }
+
+    private static string SanitizeTelemetryText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = Regex.Replace(value, @"'[A-Za-z]:\\[^']*'", "'<path>'");
+        sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\s'""]+", "<path>");
+        sanitized = Regex.Replace(sanitized, @"https?://\S+", "<url>");
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+        return sanitized.Length <= 220 ? sanitized : sanitized[..220] + "...";
+    }
+
+    private static void TryWriteBootstrapperErrorLog(Exception exception)
+    {
+        try
+        {
+            var logDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TerraFirmaGregModernLauncher");
+            Directory.CreateDirectory(logDirectory);
+            var logPath = Path.Combine(logDirectory, "bootstrapper-error.log");
+            var entry = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {exception}{Environment.NewLine}{Environment.NewLine}";
+            File.AppendAllText(logPath, entry);
+        }
+        catch
+        {
+            // Логирование не должно само ронять процесс.
         }
     }
 
@@ -167,7 +392,7 @@ internal static class Program
             return;
         }
 
-        var localPackagePath = TryFindLocalLauncherPackage(bootstrapperDirectory);
+        var localPackagePath = TryFindLocalLauncherPackage(bootstrapperDirectory, configuration.LauncherExecutable);
         if (!string.IsNullOrWhiteSpace(localPackagePath) && File.Exists(localPackagePath))
         {
             ZipFile.ExtractToDirectory(localPackagePath, installDirectory, true);
@@ -245,8 +470,17 @@ internal static class Program
             return;
         }
 
-        ZipFile.ExtractToDirectory(zipPath, installDirectory, true);
-        SafeDeleteDirectory(pendingRoot);
+        try
+        {
+            ZipFile.ExtractToDirectory(zipPath, installDirectory, true);
+            SafeDeleteDirectory(pendingRoot);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Launcher.App.exe ещё запущен (например, свёрнут в трей) и потому заблокирован.
+            // Не валим бутстраппер: оставляем подготовленное обновление в .launcher-update —
+            // оно применится при следующем «холодном» запуске, когда лаунчер закрыт.
+        }
     }
 
     private static async Task DownloadAndExtractLauncherPackageAsync(HttpClient httpClient, ResolvedLauncherUpdate launcherUpdate, string installDirectory, IProgress<BootstrapProgress>? progress = null)
@@ -483,6 +717,21 @@ internal static class Program
 
     private static async Task<ResolvedLauncherUpdate?> TryGetLauncherUpdateAsync(HttpClient httpClient, LauncherConfiguration configuration)
     {
+        try
+        {
+            return await TryGetLauncherUpdateCoreAsync(httpClient, configuration);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Net.Sockets.SocketException)
+        {
+            // Сеть/сервер недоступны (нет интернета, DNS, 503 и т.п.) — не валим бутстраппер.
+            // Уже установленный лаунчер запустится оффлайн; если установки нет, вызывающий код
+            // покажет понятное сообщение вместо тихого краша.
+            return null;
+        }
+    }
+
+    private static async Task<ResolvedLauncherUpdate?> TryGetLauncherUpdateCoreAsync(HttpClient httpClient, LauncherConfiguration configuration)
+    {
         if (!string.IsNullOrWhiteSpace(configuration.ModpackManifestUrl))
         {
             var modpackManifest = await DownloadModpackManifestAsync(httpClient, configuration.ModpackManifestUrl);
@@ -537,12 +786,26 @@ internal static class Program
 
     private static bool IsRemoteVersionNewer(string local, string remote)
     {
+        local = NormalizeVersion(local);
+        remote = NormalizeVersion(remote);
         if (Version.TryParse(local, out var localVersionParsed) && Version.TryParse(remote, out var remoteVersionParsed))
         {
             return remoteVersionParsed > localVersionParsed;
         }
 
         return !string.Equals(local, remote, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Срезаем informational-суффикс "+<git-hash>" (и "-pre" и т.п.), иначе Version.TryParse падает
+    // и бутстраппер считает любую установленную версию отличной от манифеста → бесконечное обновление.
+    private static string NormalizeVersion(string value)
+    {
+        value = (value ?? string.Empty).Trim();
+        var plus = value.IndexOf('+');
+        if (plus >= 0) value = value[..plus];
+        var dash = value.IndexOf('-');
+        if (dash >= 0) value = value[..dash];
+        return value;
     }
 
     private static bool HashesMatch(string path, string expectedHash)
@@ -564,17 +827,35 @@ internal static class Program
         return string.Concat(value.Select(character => invalid.Contains(character) ? '_' : character));
     }
 
-    private static string? TryFindLocalLauncherPackage(string bootstrapperDirectory)
+    private static string? TryFindLocalLauncherPackage(string bootstrapperDirectory, string launcherExecutable)
     {
         var directCandidate = Path.Combine(bootstrapperDirectory, "TerraFirmaGregModern-launcher-release.zip");
-        if (File.Exists(directCandidate))
+        if (File.Exists(directCandidate) && ZipContainsLauncher(directCandidate, launcherExecutable))
         {
             return directCandidate;
         }
 
+        // ВАЖНО: берём только тот zip, внутри которого реально лежит exe лаунчера. Иначе любой
+        // посторонний архив рядом с BL-modern.exe (например в «Загрузках») распаковывался бы в
+        // папку установки и засорял её (баг с появлением чужих папок вроде rimworld-animations-master).
         return Directory.EnumerateFiles(bootstrapperDirectory, "*.zip", SearchOption.TopDirectoryOnly)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
+            .FirstOrDefault(path => ZipContainsLauncher(path, launcherExecutable));
+    }
+
+    private static bool ZipContainsLauncher(string zipPath, string launcherExecutable)
+    {
+        try
+        {
+            using var archive = ZipFile.OpenRead(zipPath);
+            return archive.Entries.Any(entry =>
+                string.Equals(entry.Name, launcherExecutable, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            // Битый/недоступный архив — точно не наш пакет.
+            return false;
+        }
     }
 
     private static async Task<LegacyLauncherManifest> DownloadLegacyManifestAsync(HttpClient httpClient, string manifestUrl)
@@ -909,18 +1190,48 @@ sealed class InstallDirectoryForm : WinForms.Form
             ? SelectedDirectory
             : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        using var dialog = new WinForms.FolderBrowserDialog
+        // FolderBrowserDialog (Vista COM-диалог) открывается ВЛОЖЕННО поверх уже модального
+        // InstallDirectoryForm. На STA-потоке вложенный COM-диалог + перечисление дисков (включая
+        // сетевые/медленные) приводит к лагу и к тому, что окно иногда не всплывает.
+        // Поэтому показываем его на отдельном выделенном STA-потоке с собственным OLE-контекстом.
+        var selectedPath = ShowFolderPickerOnStaThread(start);
+        if (!string.IsNullOrEmpty(selectedPath))
         {
-            Description = "Выберите папку установки",
-            UseDescriptionForTitle = true,
-            ShowNewFolderButton = true,
-            SelectedPath = start
-        };
-
-        if (dialog.ShowDialog(this) == WinForms.DialogResult.OK)
-        {
-            _pathTextBox.Text = dialog.SelectedPath;
+            _pathTextBox.Text = selectedPath;
         }
+    }
+
+    private static string? ShowFolderPickerOnStaThread(string initialPath)
+    {
+        string? result = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var dialog = new WinForms.FolderBrowserDialog
+                {
+                    Description = "Выберите папку установки",
+                    UseDescriptionForTitle = true,
+                    ShowNewFolderButton = true,
+                    SelectedPath = initialPath
+                };
+
+                if (dialog.ShowDialog() == WinForms.DialogResult.OK)
+                {
+                    result = dialog.SelectedPath;
+                }
+            }
+            catch
+            {
+                // Если системный диалог недоступен — оставляем уже введённый в поле путь.
+            }
+        });
+
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        thread.Join();
+        return result;
     }
 
     protected override void OnFormClosing(WinForms.FormClosingEventArgs e)
@@ -937,7 +1248,62 @@ sealed class InstallDirectoryForm : WinForms.Form
             return;
         }
 
+        if (DialogResult == WinForms.DialogResult.OK)
+        {
+            var problem = ValidateInstallDirectory(SelectedDirectory);
+            if (problem is not null)
+            {
+                WinForms.MessageBox.Show(this, problem, "BL-modern TFGM", WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Warning);
+                e.Cancel = true;
+                return;
+            }
+        }
+
         base.OnFormClosing(e);
+    }
+
+    // Та же защита, что и в настройках лаунчера: не даём ставить в корень диска или системную/личную папку.
+    private static string? ValidateInstallDirectory(string rawPath)
+    {
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(rawPath.Trim()));
+        }
+        catch
+        {
+            return "Некорректный путь к папке установки.";
+        }
+
+        var normalized = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var pathRoot = Path.GetPathRoot(fullPath)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (normalized.Length <= 2 || normalized.Equals(pathRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Нельзя устанавливать в корень диска (например D:\\). Укажите отдельную папку, например D:\\BL-modern.";
+        }
+
+        var protectedFolders = new[]
+        {
+            Environment.SpecialFolder.UserProfile,
+            Environment.SpecialFolder.MyDocuments,
+            Environment.SpecialFolder.DesktopDirectory,
+            Environment.SpecialFolder.Windows,
+            Environment.SpecialFolder.System,
+            Environment.SpecialFolder.ProgramFiles,
+            Environment.SpecialFolder.ProgramFilesX86,
+            Environment.SpecialFolder.CommonApplicationData
+        };
+        foreach (var folder in protectedFolders)
+        {
+            var path = Environment.GetFolderPath(folder);
+            if (!string.IsNullOrEmpty(path) &&
+                normalized.Equals(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            {
+                return "Нельзя устанавливать прямо в системную или личную папку. Создайте отдельную подпапку для лаунчера.";
+            }
+        }
+
+        return null;
     }
 }
 

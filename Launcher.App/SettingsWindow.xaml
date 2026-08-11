@@ -261,7 +261,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Border CornerRadius="26" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" Padding="24">
+            <Border CornerRadius="26" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="24" Effect="{DynamicResource GlassShadow}">
                 <StackPanel>
                     <TextBlock FontSize="30" FontWeight="Bold" Text="Настройки" />
                     <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Параметры сохраняются локально на компьютере и применяются при установке, обновлении и запуске Minecraft." />
@@ -270,7 +270,7 @@
 
             <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" PreviewMouseWheel="SettingsScrollViewer_PreviewMouseWheel">
                 <StackPanel>
-                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Производительность" />
                             <Grid Margin="0,16,0,0">
@@ -292,7 +292,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Оформление" />
                             <TextBlock Margin="0,6,0,16" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Text="Выбери тему интерфейса для лаунчера и окна настроек." />
@@ -339,7 +339,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border CornerRadius="22" Background="{DynamicResource CardAltBrush}" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Установка" />
                             <TextBlock Margin="0,6,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Если путь пустой, используется путь из манифеста сборки." />
@@ -374,10 +374,16 @@
                                         Click="VerifyFilesButton_Click"
                                         Content="Проверить целостность" />
                             </StackPanel>
+                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                <Button Width="260"
+                                        Style="{StaticResource SoftButton}"
+                                        Click="CreateDesktopShortcutButton_Click"
+                                        Content="Ярлык на рабочий стол" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Margin="0,0,0,14" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Java и запуск" />
                             <TextBlock Margin="0,6,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="Java можно не указывать, тогда будет использован путь из манифеста. Дополнительные аргументы нужны только для тонкой настройки." />
@@ -413,7 +419,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Окно игры" />
                             <CheckBox x:Name="CustomResolutionCheckBox" Margin="0,14,0,12" Foreground="{StaticResource TextBrush}" Content="Запускать Minecraft с выбранным разрешением" />
@@ -433,9 +439,11 @@
                                     <TextBox x:Name="ResolutionHeightTextBox" />
                                 </StackPanel>
                             </Grid>
+                            <CheckBox x:Name="CloseOnGameStartCheckBox" Margin="0,16,0,0" Foreground="{StaticResource TextBrush}" Content="Закрывать лаунчер при запуске игры (вместо сворачивания в трей)" />
+                            <CheckBox x:Name="SoundEnabledCheckBox" Margin="0,12,0,0" Foreground="{StaticResource TextBrush}" Content="Звуки лаунчера (ачивки, готовность сборки)" />
                         </StackPanel>
                     </Border>
-                    <Border CornerRadius="22" Background="#CC111C19" BorderBrush="{StaticResource StrokeBrush}" BorderThickness="1" Padding="22" Margin="0,14,0,0">
+                    <Border CornerRadius="22" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Margin="0,14,0,0" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="18" FontWeight="SemiBold" Text="Анонимная статистика" />
                             <TextBlock Margin="0,6,0,12"

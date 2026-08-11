@@ -147,7 +147,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Border CornerRadius="24" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" Padding="22">
+            <Border CornerRadius="24" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="22" Effect="{DynamicResource GlassShadow}">
                 <StackPanel>
                     <TextBlock x:Name="TitleTextBlock" FontSize="28" FontWeight="Bold" TextWrapping="Wrap" />
                     <TextBlock x:Name="SummaryTextBlock" Margin="0,10,0,0" Foreground="{DynamicResource MutedBrush}" FontSize="14" TextWrapping="Wrap" />
@@ -157,7 +157,7 @@
 
             <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <Border CornerRadius="20" Background="{DynamicResource CardAltBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" Padding="20" Margin="0,0,0,14">
+                    <Border CornerRadius="20" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" Padding="20" Margin="0,0,0,14" Effect="{DynamicResource GlassShadow}">
                         <StackPanel>
                             <TextBlock FontSize="17" FontWeight="SemiBold" Text="Что сделать" />
                             <ItemsControl x:Name="ActionsItemsControl" Margin="0,12,0,0">

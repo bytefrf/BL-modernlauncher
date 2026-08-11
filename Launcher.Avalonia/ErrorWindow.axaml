@@ -1,0 +1,117 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="using:System"
+        x:Class="Launcher.Avalonia.ErrorWindow"
+        Title="Ошибка лаунчера"
+        Width="800" Height="580"
+        MinWidth="740" MinHeight="520"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Window.Resources>
+        <!-- Единственный цвет окна, которого нет в каталоге тем: в WPF он тоже задан прямо здесь.
+             Остальные кисти кладёт LauncherThemeBrushes.ApplyTheme. -->
+        <SolidColorBrush x:Key="TechnicalTextBrush" Color="#D7E2D9" />
+    </Window.Resources>
+
+    <Grid RowDefinitions="46,*">
+
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0" ColumnDefinitions="Auto,12,*,Auto">
+                <Border Width="24" Height="24" CornerRadius="6"
+                        Background="{DynamicResource WindowIconBackgroundBrush}"
+                        BorderBrush="{DynamicResource WindowIconBorderBrush}"
+                        BorderThickness="1" VerticalAlignment="Center">
+                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" Text="!" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" Text="Ошибка лаунчера" />
+                <Button Grid.Column="3" Theme="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,14,*,14,Auto">
+
+            <Border CornerRadius="24" Padding="22"
+                    Background="{DynamicResource GlassFillBrush}"
+                    BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock x:Name="TitleTextBlock" FontSize="28" FontWeight="Bold" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextBrush}" />
+                    <TextBlock x:Name="SummaryTextBlock" Margin="0,10,0,0" FontSize="14" TextWrapping="Wrap"
+                               Foreground="{DynamicResource MutedBrush}" />
+                    <TextBlock x:Name="LogPathTextBlock" Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AccentBrush}" />
+                </StackPanel>
+            </Border>
+
+            <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <Border CornerRadius="20" Padding="20" Margin="0,0,0,14"
+                            Background="{DynamicResource GlassFillBrush}"
+                            BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock FontSize="17" FontWeight="SemiBold" Text="Что сделать"
+                                       Foreground="{DynamicResource TextBrush}" />
+                            <ItemsControl x:Name="ActionsItemsControl" Margin="0,12,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="sys:String">
+                                        <Grid Margin="0,0,0,9" ColumnDefinitions="22,*">
+                                            <TextBlock Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" Text="*" />
+                                            <TextBlock Grid.Column="1" TextWrapping="Wrap" Text="{Binding}"
+                                                       Foreground="{DynamicResource MutedBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Фон и рамку у Expander снимаем: тема Fluent рисует свой чёрный блок,
+                         которого в WPF-версии нет и который выбивается из оформления окна. -->
+                    <Expander Header="Технические детали"
+                              Foreground="{DynamicResource MutedBrush}"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              Padding="0">
+                        <Border Margin="0,10,0,0" CornerRadius="16" Padding="14"
+                                Background="{DynamicResource TextBoxBackgroundBrush}"
+                                BorderBrush="{DynamicResource TextBoxBorderBrush}" BorderThickness="1">
+                            <TextBox x:Name="TechnicalTextBox"
+                                     Height="150"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Foreground="{DynamicResource TechnicalTextBrush}"
+                                     FontFamily="Consolas,Menlo,DejaVu Sans Mono,monospace"
+                                     FontSize="11"
+                                     IsReadOnly="True"
+                                     TextWrapping="NoWrap"
+                                     AcceptsReturn="True"
+                                     VerticalContentAlignment="Top" />
+                        </Border>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,10,Auto,10,Auto,10,Auto">
+                <TextBlock x:Name="SupportStatusTextBlock" Grid.Column="0"
+                           VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <Button x:Name="SendLogButton" Grid.Column="1" Width="150" Content="Отправить лог"
+                        Theme="{StaticResource SoftButton}" Click="SendLogButton_Click" />
+                <Button Grid.Column="3" Width="140" Content="Скопировать"
+                        Theme="{StaticResource SoftButton}" Click="CopyButton_Click" />
+                <Button x:Name="OpenLogsButton" Grid.Column="5" Width="130" Content="Открыть логи"
+                        Theme="{StaticResource SoftButton}" Click="OpenLogsButton_Click" />
+                <Button Grid.Column="7" Width="110" Content="Понятно"
+                        Theme="{StaticResource PrimaryButton}" Click="CloseButton_Click" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

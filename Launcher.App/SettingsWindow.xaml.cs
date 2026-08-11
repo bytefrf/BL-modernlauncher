@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using Launcher.App.Configuration;
 using Launcher.App.Models;
 using Launcher.App.Theming;
 using WinForms = System.Windows.Forms;
@@ -11,6 +12,9 @@ public partial class SettingsWindow : Window
     private const double MouseWheelScrollStep = 18d;
     private readonly UserSettings _initialSettings;
     private readonly string _defaultInstallRoot;
+    // id выбранной сборки в каталог-режиме (null = одиночный режим). Если задан — поле «папка
+    // установки» относится к этой сборке (хранится в UserSettings.ModpackInstallRoots), а не к глобальному пути.
+    private readonly string? _modpackId;
     private readonly int _memoryDefault;
     private readonly int _memoryMin;
     private readonly int _memoryMax;
@@ -24,17 +28,19 @@ public partial class SettingsWindow : Window
         string defaultInstallRoot,
         int memoryDefault,
         int memoryMin,
-        int memoryMax)
+        int memoryMax,
+        string? modpackId = null)
     {
         InitializeComponent();
         _initialSettings = Clone(settings);
         _defaultInstallRoot = defaultInstallRoot;
+        _modpackId = modpackId;
         _memoryDefault = memoryDefault;
         _memoryMin = memoryMin;
         _memoryMax = memoryMax;
         Settings = Clone(settings);
         ThemeListBox.ItemsSource = LauncherThemeCatalog.All;
-        LauncherThemeCatalog.ApplyTheme(Resources, settings.ThemeId);
+        LauncherThemeBrushes.ApplyTheme(Resources, settings.ThemeId);
         DefaultInstallPathTextBlock.Text = defaultInstallRoot;
         MemorySlider.Minimum = memoryMin;
         MemorySlider.Maximum = memoryMax;
@@ -43,13 +49,57 @@ public partial class SettingsWindow : Window
         MemorySlider.LargeChange = 1024;
         PopulateFields(Settings);
         _themeSelectionReady = true;
+        ApplyResponsiveWindowSize();
+    }
+
+    /// <summary>
+    /// Окно настроек было жёстко 820×660 при ResizeMode=NoResize. На ноутбуках 1366×768 и при
+    /// масштабе Windows 125–150% рабочая область в DIP меньше этого, и низ окна с кнопками
+    /// «Сохранить»/«Отмена» уезжал за пределы экрана без возможности до него добраться.
+    /// Теперь размер зажимается по рабочей области; содержимое и так лежит в ScrollViewer.
+    /// </summary>
+    private void ApplyResponsiveWindowSize()
+    {
+        const double desiredWidth = 820;
+        const double desiredHeight = 660;
+        const double screenMargin = 60;
+        // Ниже этого настройки нечитаемы; если экран ещё меньше — окно просто займёт его целиком.
+        const double floorWidth = 620;
+        const double floorHeight = 420;
+
+        var workArea = SystemParameters.WorkArea;
+        var width = Math.Max(floorWidth, Math.Min(desiredWidth, workArea.Width - screenMargin));
+        var height = Math.Max(floorHeight, Math.Min(desiredHeight, workArea.Height - screenMargin));
+
+        // Порядок важен: Width нельзя опустить ниже действующего MinWidth, поэтому его снимаем первым.
+        MinWidth = Math.Min(MinWidth, width);
+        MinHeight = Math.Min(MinHeight, height);
+        Width = width;
+        Height = height;
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!ValidateInstallPathOrWarn())
+        {
+            return;
+        }
+
         Settings = ReadFields();
         DialogResult = true;
         Close();
+    }
+
+    private bool ValidateInstallPathOrWarn()
+    {
+        var problem = InstallPathValidator.Validate(InstallPathTextBox.Text);
+        if (problem is null)
+        {
+            return true;
+        }
+
+        System.Windows.MessageBox.Show(this, problem, "Папка установки", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -119,6 +169,19 @@ public partial class SettingsWindow : Window
         });
     }
 
+    private void CreateDesktopShortcutButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = Launcher.App.Services.DesktopShortcutService.Create("BL-modern TFGM");
+            System.Windows.MessageBox.Show(this, $"Ярлык создан на рабочем столе:\n{path}", "Ярлык", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception exception)
+        {
+            System.Windows.MessageBox.Show(this, $"Не удалось создать ярлык: {exception.Message}", "Ярлык", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void OpenLatestLogButton_Click(object sender, RoutedEventArgs e)
     {
         var latestLogPath = Path.Combine(GetEffectiveInstallRootFromFields(), "logs", "latest.log");
@@ -137,6 +200,11 @@ public partial class SettingsWindow : Window
 
     private void VerifyFilesButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!ValidateInstallPathOrWarn())
+        {
+            return;
+        }
+
         Settings = ReadFields();
         RequestedIntegrityCheck = true;
         DialogResult = true;
@@ -190,40 +258,71 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        LauncherThemeCatalog.ApplyTheme(Resources, theme.Id);
+        LauncherThemeBrushes.ApplyTheme(Resources, theme.Id);
     }
 
     private void PopulateFields(UserSettings settings)
     {
         MemorySlider.Value = SnapMemory(settings.MemoryMb);
         MemoryValueTextBlock.Text = SnapMemory(settings.MemoryMb).ToString();
-        InstallPathTextBox.Text = settings.InstallRoot;
+        // В каталог-режиме поле = папка выбранной сборки (пусто → стоит в папке по умолчанию из подсказки).
+        InstallPathTextBox.Text = _modpackId is null
+            ? settings.InstallRoot
+            : (settings.ModpackInstallRoots != null && settings.ModpackInstallRoots.TryGetValue(_modpackId, out var perPack) ? perPack : string.Empty);
         JavaPathTextBox.Text = settings.JavaExecutable;
         JvmArgsTextBox.Text = settings.JvmArguments;
         GameArgsTextBox.Text = settings.GameArguments;
         CustomResolutionCheckBox.IsChecked = settings.UseCustomResolution;
         ResolutionWidthTextBox.Text = settings.ResolutionWidth.ToString();
         ResolutionHeightTextBox.Text = settings.ResolutionHeight.ToString();
+        CloseOnGameStartCheckBox.IsChecked = settings.CloseOnGameStart;
         TelemetryEnabledCheckBox.IsChecked = settings.TelemetryEnabled;
+        SoundEnabledCheckBox.IsChecked = settings.SoundEnabled;
         ThemeListBox.SelectedItem = LauncherThemeCatalog.Get(settings.ThemeId);
     }
 
     private UserSettings ReadFields()
     {
+        var fieldPath = InstallPathTextBox.Text.Trim();
+
+        // Папка установки. В одиночном режиме это глобальный InstallRoot; в каталог-режиме — папка
+        // конкретной сборки (хранится в ModpackInstallRoots, пустое значение = вернуть к папке по умолчанию).
+        var installRoot = _modpackId is null ? fieldPath : _initialSettings.InstallRoot;
+        var modpackRoots = new Dictionary<string, string>(
+            _initialSettings.ModpackInstallRoots ?? new Dictionary<string, string>(),
+            StringComparer.OrdinalIgnoreCase);
+        if (_modpackId is not null)
+        {
+            if (string.IsNullOrWhiteSpace(fieldPath))
+            {
+                modpackRoots.Remove(_modpackId);
+            }
+            else
+            {
+                modpackRoots[_modpackId] = fieldPath;
+            }
+        }
+
         return new UserSettings
         {
             Username = _initialSettings.Username,
             MemoryMb = SnapMemory((int)Math.Round(MemorySlider.Value)),
-            InstallRoot = InstallPathTextBox.Text.Trim(),
+            InstallRoot = installRoot,
+            ModpackInstallRoots = modpackRoots,
             JavaExecutable = NormalizeJavaPath(JavaPathTextBox.Text),
             JvmArguments = JvmArgsTextBox.Text.Trim(),
             GameArguments = GameArgsTextBox.Text.Trim(),
             UseCustomResolution = CustomResolutionCheckBox.IsChecked == true,
+            CloseOnGameStart = CloseOnGameStartCheckBox.IsChecked == true,
             TelemetryEnabled = TelemetryEnabledCheckBox.IsChecked == true,
+            SoundEnabled = SoundEnabledCheckBox.IsChecked == true,
             ThemeId = (ThemeListBox.SelectedItem as LauncherTheme)?.Id ?? LauncherThemeCatalog.DefaultThemeId,
             ClientId = string.IsNullOrWhiteSpace(_initialSettings.ClientId) ? Guid.NewGuid().ToString() : _initialSettings.ClientId,
             ResolutionWidth = ParseInt(ResolutionWidthTextBox.Text, _initialSettings.ResolutionWidth, 320, 7680),
-            ResolutionHeight = ParseInt(ResolutionHeightTextBox.Text, _initialSettings.ResolutionHeight, 240, 4320)
+            ResolutionHeight = ParseInt(ResolutionHeightTextBox.Text, _initialSettings.ResolutionHeight, 240, 4320),
+            // Поля, которых нет в окне настроек, переносим как есть, иначе они затрутся при сохранении.
+            SelectedModpackId = _initialSettings.SelectedModpackId,
+            SupportEmail = _initialSettings.SupportEmail
         };
     }
 
@@ -234,15 +333,21 @@ public partial class SettingsWindow : Window
             Username = settings.Username,
             MemoryMb = settings.MemoryMb,
             InstallRoot = settings.InstallRoot,
+            ModpackInstallRoots = new Dictionary<string, string>(
+                settings.ModpackInstallRoots ?? new Dictionary<string, string>(),
+                StringComparer.OrdinalIgnoreCase),
             JavaExecutable = settings.JavaExecutable,
             JvmArguments = settings.JvmArguments,
             GameArguments = settings.GameArguments,
             UseCustomResolution = settings.UseCustomResolution,
+            CloseOnGameStart = settings.CloseOnGameStart,
             TelemetryEnabled = settings.TelemetryEnabled,
             ThemeId = settings.ThemeId,
             ClientId = string.IsNullOrWhiteSpace(settings.ClientId) ? Guid.NewGuid().ToString() : settings.ClientId,
             ResolutionWidth = settings.ResolutionWidth,
-            ResolutionHeight = settings.ResolutionHeight
+            ResolutionHeight = settings.ResolutionHeight,
+            SelectedModpackId = settings.SelectedModpackId,
+            SupportEmail = settings.SupportEmail
         };
     }
 

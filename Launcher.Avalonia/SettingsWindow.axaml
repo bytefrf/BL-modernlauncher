@@ -1,0 +1,269 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:th="using:Launcher.App.Theming"
+        x:Class="Launcher.Avalonia.SettingsWindow"
+        Title="Настройки лаунчера"
+        Width="820" Height="660"
+        MinWidth="760" MinHeight="600"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,*">
+
+        <!-- Свой заголовок окна, как в WPF. На Linux и macOS его прячет код окна:
+             там рамку рисует система. -->
+        <Border Grid.Row="0"
+                x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0" ColumnDefinitions="Auto,12,*,Auto,4,Auto">
+                <Border Width="24" Height="24" CornerRadius="6"
+                        Background="{DynamicResource WindowIconBackgroundBrush}"
+                        BorderBrush="{DynamicResource WindowIconBorderBrush}"
+                        BorderThickness="1" VerticalAlignment="Center">
+                    <Image Width="18" Height="18" Source="avares://Launcher.Avalonia/Assets/Sprite-0001.png" Stretch="Uniform" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" Text="Настройки лаунчера" />
+                <Button Grid.Column="3" Theme="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" Content="-" />
+                <Button Grid.Column="5" Theme="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <!-- Мягкая подсветка из левого верхнего угла, как в оригинале. -->
+            <Grid.Background>
+                <RadialGradientBrush Center="15%,8%" GradientOrigin="15%,8%" RadiusX="85%" RadiusY="75%">
+                    <GradientStop Color="#233F34" Offset="0" />
+                    <GradientStop Color="#0B1713" Offset="0.58" />
+                    <GradientStop Color="#07100E" Offset="1" />
+                </RadialGradientBrush>
+            </Grid.Background>
+
+            <Grid Margin="24" RowDefinitions="Auto,18,*,18,Auto">
+
+                <!-- Шапка — тоже стеклянная карточка, а не голый текст. -->
+                <Border Grid.Row="0" CornerRadius="26" Padding="24"
+                        Background="{DynamicResource GlassFillBrush}"
+                        BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                        BoxShadow="0 0 20 0 #6B000000">
+                    <StackPanel>
+                        <TextBlock FontSize="30" FontWeight="Bold" Text="Настройки"
+                                   Foreground="{DynamicResource TextBrush}" />
+                        <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource MutedBrush}"
+                                   Text="Параметры сохраняются локально на компьютере и применяются при установке, обновлении и запуске Minecraft." />
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+
+                        <!-- ПРОИЗВОДИТЕЛЬНОСТЬ -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Производительность"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <Grid Margin="0,16,0,6" ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Память, МБ" Foreground="{DynamicResource MutedBrush}" />
+                                    <TextBlock x:Name="MemoryValueTextBlock" Grid.Column="1" FontWeight="SemiBold"
+                                               Text="4096" Foreground="{DynamicResource TextBrush}" />
+                                </Grid>
+                                <Slider x:Name="MemorySlider" TickFrequency="512" SmallChange="512" LargeChange="1024"
+                                        IsSnapToTickEnabled="True"
+                                        Foreground="{DynamicResource AccentBrush}"
+                                        PropertyChanged="MemorySlider_PropertyChanged" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ОФОРМЛЕНИЕ -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Оформление"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <TextBlock Margin="0,6,0,16" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           Text="Выбери тему интерфейса для лаунчера и окна настроек." />
+                                <TextBlock Margin="0,0,0,10" Text="Тема" Foreground="{DynamicResource MutedBrush}" />
+                                <ListBox x:Name="ThemeListBox" Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                         SelectionChanged="ThemeListBox_SelectionChanged">
+                                    <ListBox.ItemContainerTheme>
+                                        <StaticResource ResourceKey="ThemeTileItem" />
+                                    </ListBox.ItemContainerTheme>
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="th:LauncherTheme">
+                                            <!-- Три образца цвета слева, название и id справа. -->
+                                            <Grid Width="356" ColumnDefinitions="Auto,12,*">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Border Width="18" Height="18" CornerRadius="9" BorderThickness="1"
+                                                            BorderBrush="{DynamicResource TextBrush}"
+                                                            Background="{Binding Accent}" />
+                                                    <Border Width="18" Height="18" CornerRadius="9" BorderThickness="1"
+                                                            Margin="6,0,0,0"
+                                                            BorderBrush="{DynamicResource TextBrush}"
+                                                            Background="{Binding Panel}" />
+                                                    <Border Width="18" Height="18" CornerRadius="9" BorderThickness="1"
+                                                            Margin="6,0,0,0"
+                                                            BorderBrush="{DynamicResource TextBrush}"
+                                                            Background="{Binding Card}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="15" FontWeight="SemiBold"
+                                                               Text="{Binding DisplayName}"
+                                                               Foreground="{DynamicResource TextBrush}" />
+                                                    <TextBlock Margin="0,4,0,0" Text="{Binding Id}"
+                                                               Foreground="{DynamicResource MutedBrush}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- УСТАНОВКА -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Установка"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <TextBlock Margin="0,6,0,16" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           Text="Если путь пустой, используется путь из манифеста сборки." />
+                                <TextBlock Margin="0,0,0,6" Text="Путь установки сборки"
+                                           Foreground="{DynamicResource MutedBrush}" />
+                                <Grid ColumnDefinitions="*,8,Auto">
+                                    <TextBox x:Name="InstallPathTextBox" Grid.Column="0"
+                                             Background="{DynamicResource TextBoxBackgroundBrush}"
+                                             BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                             Foreground="{DynamicResource TextBrush}" />
+                                    <Button Grid.Column="2" Content="Обзор…" Theme="{StaticResource SoftButton}"
+                                            Click="BrowseInstallPath_Click" />
+                                </Grid>
+                                <TextBlock x:Name="InstallPathHint" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                                           IsVisible="False"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                                <TextBlock Margin="0,14,0,6" Text="Путь по умолчанию"
+                                           Foreground="{DynamicResource MutedBrush}" />
+                                <TextBlock x:Name="DefaultInstallPathTextBlock" TextWrapping="Wrap" Text="-"
+                                           Foreground="{DynamicResource TextBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- JAVA -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Java"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <TextBlock x:Name="JavaPathLabel" Margin="0,16,0,6" Text="Путь к java"
+                                           Foreground="{DynamicResource MutedBrush}" />
+                                <TextBox x:Name="JavaPathTextBox"
+                                         Background="{DynamicResource TextBoxBackgroundBrush}"
+                                         BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                         Foreground="{DynamicResource TextBrush}" />
+                                <Grid Margin="0,14,0,0" ColumnDefinitions="*,12,*">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Margin="0,0,0,6" Text="Аргументы JVM"
+                                                   Foreground="{DynamicResource MutedBrush}" />
+                                        <TextBox x:Name="JvmArgsTextBox" Height="92" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 Background="{DynamicResource TextBoxBackgroundBrush}"
+                                                 BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                                 Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Margin="0,0,0,6" Text="Игровые аргументы"
+                                                   Foreground="{DynamicResource MutedBrush}" />
+                                        <TextBox x:Name="GameArgsTextBox" Height="92" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 Background="{DynamicResource TextBoxBackgroundBrush}"
+                                                 BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                                 Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ОКНО ИГРЫ -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Окно игры"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <CheckBox x:Name="CustomResolutionCheckBox" Margin="0,14,0,12"
+                                          Foreground="{DynamicResource TextBrush}"
+                                          Content="Запускать Minecraft с выбранным разрешением" />
+                                <Grid ColumnDefinitions="*,12,*">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Margin="0,0,0,6" Text="Ширина" Foreground="{DynamicResource MutedBrush}" />
+                                        <TextBox x:Name="ResolutionWidthTextBox"
+                                                 Background="{DynamicResource TextBoxBackgroundBrush}"
+                                                 BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                                 Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Margin="0,0,0,6" Text="Высота" Foreground="{DynamicResource MutedBrush}" />
+                                        <TextBox x:Name="ResolutionHeightTextBox"
+                                                 Background="{DynamicResource TextBoxBackgroundBrush}"
+                                                 BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                                 Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                                <CheckBox x:Name="CloseOnGameStartCheckBox" Margin="0,16,0,0"
+                                          Foreground="{DynamicResource TextBrush}"
+                                          Content="Закрывать лаунчер при запуске игры (вместо сворачивания в трей)" />
+                                <CheckBox x:Name="SoundEnabledCheckBox" Margin="0,12,0,0"
+                                          Foreground="{DynamicResource TextBrush}"
+                                          Content="Звуки лаунчера (ачивки, готовность сборки)" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- АНОНИМНАЯ СТАТИСТИКА -->
+                        <Border CornerRadius="22" Padding="22" Margin="0,0,0,14"
+                                Background="{DynamicResource GlassFillBrush}"
+                                BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1"
+                                BoxShadow="0 0 20 0 #6B000000">
+                            <StackPanel>
+                                <TextBlock FontSize="18" FontWeight="SemiBold" Text="Анонимная статистика"
+                                           Foreground="{DynamicResource TextBrush}" />
+                                <CheckBox x:Name="TelemetryEnabledCheckBox" Margin="0,14,0,0"
+                                          Foreground="{DynamicResource TextBrush}"
+                                          Content="Помочь улучшить лаунчер: отправлять анонимную статистику запусков и ошибок. Без имени игрока и без личных данных." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Grid Grid.Row="4" ColumnDefinitions="*,Auto,10,Auto,10,Auto">
+                    <Button Grid.Column="1" Width="130" Content="Сбросить"
+                            Theme="{StaticResource SoftButton}" Click="Reset_Click" />
+                    <Button Grid.Column="3" Width="120" Content="Отмена"
+                            Theme="{StaticResource SoftButton}" Click="Cancel_Click" />
+                    <Button Grid.Column="5" Width="150" Content="Сохранить"
+                            Theme="{StaticResource PrimaryButton}" Click="Save_Click" />
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

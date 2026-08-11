@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.Avalonia.ViewModels"
+        x:Class="Launcher.Avalonia.OptionalModsWindow"
+        Title="Дополнительные моды"
+        Width="760" Height="620"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,Auto,*,Auto">
+
+        <!-- Свой заголовок на Windows, системная рамка на Linux и macOS. -->
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0">
+                <TextBlock Text="Дополнительные моды" VerticalAlignment="Center"
+                           FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                <Button HorizontalAlignment="Right" Theme="{StaticResource TitleBarButton}"
+                        Click="CloseButton_Click" Content="×" ToolTip.Tip="Закрыть" />
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="1" Margin="22,18,22,10">
+            <TextBlock Text="Моды, одобренные администрацией" FontSize="18" FontWeight="Bold"
+                       Foreground="{DynamicResource TextBrush}" />
+            <TextBlock x:Name="SubtitleTextBlock" Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource MutedBrush}"
+                       Text="Отметь моды, которые хочешь добавить к сборке. Они переустановятся автоматически после каждого обновления." />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="2" Margin="22,0,22,0" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <TextBlock x:Name="EmptyTextBlock" IsVisible="False" Margin="2,10,0,0"
+                           TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}"
+                           Text="Для этой сборки пока нет одобренных дополнительных модов." />
+
+                <ItemsControl x:Name="ModsPanel">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OptionalModRow">
+                            <Border Margin="0,0,0,10" CornerRadius="14" Padding="14,12"
+                                    Background="{DynamicResource CardAltBrush}"
+                                    BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                <Grid ColumnDefinitions="Auto,12,*,Auto">
+                                    <CheckBox VerticalAlignment="Center" IsChecked="{Binding Selected, Mode=TwoWay}"
+                                              Foreground="{DynamicResource TextBrush}" />
+
+                                    <StackPanel Grid.Column="2">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextBrush}" />
+                                            <Border Margin="8,0,0,0" CornerRadius="7" Padding="7,2"
+                                                    Background="{DynamicResource PanelAltBrush}"
+                                                    IsVisible="{Binding HasCategory}">
+                                                <TextBlock Text="{Binding Category}" FontSize="10"
+                                                           Foreground="{DynamicResource MutedBrush}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Description}" Margin="0,4,0,0" FontSize="11"
+                                                   TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"
+                                                   IsVisible="{Binding HasDescription}" />
+                                        <TextBlock Text="{Binding Meta}" Margin="0,4,0,0" FontSize="10"
+                                                   Foreground="{DynamicResource MutedBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="3" Margin="22,14,22,18" ColumnDefinitions="*,Auto,10,Auto">
+            <TextBlock x:Name="StatusTextBlock" VerticalAlignment="Center" FontSize="12"
+                       TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Text="" />
+            <Button Grid.Column="1" Width="120" Content="Отмена"
+                    Theme="{StaticResource SoftButton}" Click="CancelButton_Click" />
+            <Button x:Name="ApplyButton" Grid.Column="3" Width="180" Content="Применить"
+                    Theme="{StaticResource PrimaryButton}" Click="ApplyButton_Click" />
+        </Grid>
+    </Grid>
+</Window>

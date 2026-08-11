@@ -1,0 +1,88 @@
+name: crossplatform-checks
+
+# Проверка кроссплатформенной части лаунчера на НАСТОЯЩИХ macOS и Linux.
+# Кросс-компиляция с Windows ловит только ошибки компиляции; всё, что зависит от ОС
+# (пути вида ~/Library, поиск Java, распаковка tar.gz, POSIX-скрипты), проверяется здесь.
+#
+# Windows-релиз собирает отдельный workflow build.yml — он не тронут.
+
+on:
+  push:
+    branches: [ main, 'fix/**' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14        # Apple Silicon: та же архитектура, что и в osx-arm64 пакете
+            rid: osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Решение целиком здесь не собрать: Launcher.App и Launcher.Bootstrapper — WPF/net8.0-windows.
+      # Собираем ровно то, что обязано работать на этих системах.
+      - name: Build core
+        run: dotnet build Launcher.Core/Launcher.Core.csproj -c Release --nologo
+
+      - name: Build offline tests
+        run: dotnet build SmokeTest/SmokeTest.csproj -c Release --nologo
+
+      - name: Build UI
+        run: dotnet build Launcher.Avalonia/Launcher.Avalonia.csproj -c Release --nologo
+
+      # Каждый режим — отдельный набор проверок. Прогоняем ВСЕ, даже если один упал:
+      # интересна полная картина расхождений с Windows, а не первая же ошибка.
+      - name: Offline checks
+        shell: bash
+        run: |
+          set -u
+          smoke="SmokeTest/bin/Release/net8.0/SmokeTest"
+          failed=0
+          for mode in --selftest --classify --embedded --manifest-fallback --catalog \
+                      --primary-action --profile-isolation --markdown --servers --error-report; do
+            echo "::group::$mode"
+            if ! "$smoke" "$mode"; then
+              echo "::error::режим $mode завершился с ошибкой"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+      - name: Publish self-contained package
+        run: >
+          dotnet publish Launcher.Avalonia/Launcher.Avalonia.csproj -c Release -r ${{ matrix.rid }}
+          --self-contained true -p:DebugType=none -o publish/${{ matrix.rid }}
+
+      # Права на исполняемый файл теряются при упаковке в zip средствами actions/upload-artifact,
+      # поэтому проверяем их здесь, пока файл лежит на диске раннера.
+      - name: Check entry point
+        shell: bash
+        run: |
+          exe="publish/${{ matrix.rid }}/Launcher.Avalonia"
+          test -f "$exe" || { echo "::error::нет точки входа $exe"; exit 1; }
+          chmod +x "$exe"
+          file "$exe"
+          ls -la "publish/${{ matrix.rid }}" | head -20
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.rid }}
+          path: publish/${{ matrix.rid }}

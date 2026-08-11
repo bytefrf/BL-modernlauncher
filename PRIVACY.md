@@ -20,8 +20,21 @@ server (`https://bl-modern.ru/api/`). These events contain:
 - Application events: launch started/succeeded/failed, install completed, game session
   ended or crashed, and related diagnostic fields (e.g. exit code, crash category).
 
-We **do not** collect: your Minecraft account credentials, real name, email address,
-chat messages, file contents, or any personally identifying information.
+We **do not** collect: your Minecraft account credentials, real name, chat messages,
+file contents, or any personally identifying information.
+
+## Support requests
+
+The support window is the only place where the launcher handles a personal detail, and
+only if you choose to provide it:
+
+- The **email address** field is optional. If you fill it in, it is sent together with
+  your support request and stored with that ticket for one purpose: so support staff can
+  reply to you by email as well as in the launcher.
+- Clearing the field removes the address from the ticket on the next request.
+- The address is never used for newsletters or marketing, is not shared with third
+  parties, and is not included in telemetry or crash reports.
+- Your support messages are stored with the ticket so the conversation can continue.
 
 ## How the data is used
 

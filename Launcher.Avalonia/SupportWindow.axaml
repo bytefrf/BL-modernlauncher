@@ -1,0 +1,94 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="using:Launcher.App.Services"
+        x:Class="Launcher.Avalonia.SupportWindow"
+        Title="Поддержка"
+        Width="720" Height="680"
+        MinWidth="620" MinHeight="560"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,*">
+
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0" ColumnDefinitions="Auto,12,*,Auto,4,Auto">
+                <Border Width="24" Height="24" CornerRadius="6"
+                        Background="{DynamicResource WindowIconBackgroundBrush}"
+                        BorderBrush="{DynamicResource WindowIconBorderBrush}"
+                        BorderThickness="1" VerticalAlignment="Center">
+                    <Image Width="18" Height="18" Source="avares://Launcher.Avalonia/Assets/Sprite-0001.png" Stretch="Uniform" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" Text="Поддержка" />
+                <Button Grid.Column="3" Theme="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" Content="-" />
+                <Button Grid.Column="5" Theme="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,14,*,14,Auto,10,Auto,14,Auto">
+
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock FontSize="24" FontWeight="Bold" Text="Поддержка лаунчера"
+                               Foreground="{DynamicResource TextBrush}" />
+                    <TextBlock x:Name="TicketInfoTextBlock" Margin="0,8,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource MutedBrush}" Text="Загрузка диалога..." />
+                </StackPanel>
+                <Button Grid.Column="1" Width="110" Content="Обновить"
+                        Theme="{StaticResource SoftButton}" Click="RefreshButton_Click" />
+            </Grid>
+
+            <Border Grid.Row="2" CornerRadius="16" Padding="14"
+                    Background="{DynamicResource CardAltBrush}"
+                    BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                <ScrollViewer x:Name="MessagesScrollViewer" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="MessagesItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="svc:SupportMessageLine">
+                                <Border Margin="0,0,0,10" Padding="12" CornerRadius="12"
+                                        Background="{DynamicResource PanelAltBrush}"
+                                        BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock FontSize="11" Text="{Binding Header}"
+                                                   Foreground="{DynamicResource AccentBrush}" />
+                                        <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding Message}"
+                                                   Foreground="{DynamicResource TextBrush}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <StackPanel Grid.Row="4">
+                <TextBlock Margin="4,0,0,6" Text="Email для ответа поддержки (необязательно)"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <TextBox x:Name="EmailTextBox" Height="42" MaxLength="160"
+                         Background="{DynamicResource TextBoxBackgroundBrush}"
+                         BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                         Foreground="{DynamicResource TextBrush}"
+                         ToolTip.Tip="Если указан email, поддержка сможет продублировать ответ письмом." />
+            </StackPanel>
+
+            <TextBox x:Name="MessageTextBox" Grid.Row="6" Height="92" AcceptsReturn="True"
+                     TextWrapping="Wrap" MaxLength="4000"
+                     Background="{DynamicResource TextBoxBackgroundBrush}"
+                     BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                     Foreground="{DynamicResource TextBrush}"
+                     ToolTip.Tip="Опиши проблему: что нажал, что должно было произойти, что произошло вместо этого." />
+
+            <Grid Grid.Row="8" ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="StatusTextBlock" VerticalAlignment="Center" TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <Button x:Name="SendButton" Grid.Column="1" Width="150" Content="Отправить"
+                        Theme="{StaticResource PrimaryButton}" Click="SendButton_Click" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

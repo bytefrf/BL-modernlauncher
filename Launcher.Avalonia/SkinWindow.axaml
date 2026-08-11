@@ -1,0 +1,102 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Launcher.Avalonia.SkinWindow"
+        Title="Скин"
+        Width="720" Height="560"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,*,Auto">
+
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0">
+                <TextBlock Text="Скин игрока" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" />
+                <Button HorizontalAlignment="Right" Theme="{StaticResource TitleBarButton}"
+                        Click="CloseButton_Click" Content="×" ToolTip.Tip="Закрыть" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="24" ColumnDefinitions="Auto,24,*">
+
+            <!-- ПРЕВЬЮ -->
+            <Border Grid.Column="0" Width="220" CornerRadius="18" Padding="16"
+                    Background="{DynamicResource CardAltBrush}"
+                    BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock x:Name="PreviewCaptionTextBlock" Text="Текущий скин" FontSize="12"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
+                    <Border Height="300" Margin="0,12,0,0">
+                        <!-- Без сглаживания: иначе пиксельный скин мылится. -->
+                        <Image x:Name="SkinPreviewImage" Stretch="Uniform"
+                               RenderOptions.BitmapInterpolationMode="None" />
+                    </Border>
+                    <TextBlock x:Name="PreviewEmptyTextBlock" IsVisible="False"
+                               Text="Скин не установлен — в игре используется стандартный."
+                               FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0"
+                               Foreground="{DynamicResource MutedBrush}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ФОРМА -->
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Сменить скин" FontSize="18" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource MutedBrush}"
+                           Text="PNG 64×64 (или старый 64×32), до 250 КБ. Скин применится на всех серверах проекта." />
+
+                <TextBlock Text="Файл скина" FontSize="12" Margin="0,18,0,0"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <Grid Margin="0,6,0,0" ColumnDefinitions="*,12,Auto">
+                    <Border Grid.Column="0" Height="40" CornerRadius="10" Padding="12,0"
+                            Background="{DynamicResource TextBoxBackgroundBrush}"
+                            BorderBrush="{DynamicResource TextBoxBorderBrush}" BorderThickness="1">
+                        <TextBlock x:Name="FileNameTextBlock" VerticalAlignment="Center" FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource MutedBrush}" Text="Файл не выбран" />
+                    </Border>
+                    <Button Grid.Column="2" Width="130" Content="Выбрать…"
+                            Theme="{StaticResource SoftButton}" Click="BrowseButton_Click" />
+                </Grid>
+
+                <TextBlock Text="Модель рук" FontSize="12" Margin="0,16,0,0"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <RadioButton x:Name="ClassicRadio" IsChecked="True" GroupName="Model"
+                                 Content="Классическая (4 px)" Foreground="{DynamicResource TextBrush}" />
+                    <RadioButton x:Name="SlimRadio" Margin="20,0,0,0" GroupName="Model"
+                                 Content="Тонкая / Alex (3 px)" Foreground="{DynamicResource TextBrush}" />
+                </StackPanel>
+
+                <TextBlock Text="Пароль от аккаунта на сайте" FontSize="12" Margin="0,18,0,0"
+                           Foreground="{DynamicResource MutedBrush}" />
+                <TextBox x:Name="PasswordBox" Height="40" Margin="0,6,0,0" FontSize="13"
+                         PasswordChar="•"
+                         Background="{DynamicResource TextBoxBackgroundBrush}"
+                         BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                         Foreground="{DynamicResource TextBrush}" />
+                <TextBlock Margin="0,6,0,0" FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource MutedBrush}"
+                           Text="Пароль нужен серверу для подтверждения, что скин меняешь именно ты. Лаунчер его не сохраняет и не пишет в логи." />
+
+                <TextBlock x:Name="StatusTextBlock" Margin="0,14,0,0" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AccentBrush}" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="24,0,24,20" ColumnDefinitions="Auto,*,Auto,10,Auto">
+            <Button x:Name="ResetButton" Grid.Column="0" Width="170" Content="Сбросить скин"
+                    Theme="{StaticResource SoftButton}" Click="ResetButton_Click" />
+            <Button Grid.Column="2" Width="120" Content="Закрыть"
+                    Theme="{StaticResource SoftButton}" Click="CloseButton_Click" />
+            <Button x:Name="UploadButton" Grid.Column="4" Width="190" Content="Загрузить скин"
+                    Theme="{StaticResource PrimaryButton}" Click="UploadButton_Click" />
+        </Grid>
+    </Grid>
+</Window>

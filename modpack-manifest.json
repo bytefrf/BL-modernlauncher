@@ -4,9 +4,9 @@
     "title": "BL-modern TFGM",
     "newsUrl": "https://bl-modern.ru/api/rss.php",
     "supportUrl": "https://discord.gg/FpV9bRggvt",
-    "version": "1.0.66",
+    "version": "1.3.0",
     "packageUrl": "https://bl-modern.ru/download/TerraFirmaGregModern-launcher-release.zip",
-    "sha256": "045B156021F29FC6CC2D2D19EE251C94744AB887ECAB99080CEE7B37FEDEDE95"
+    "sha256": "A8CDEDDD053BB2060E3AE665E6A9EF3AB61251635CA370E955FD2424C7529079"
   },
   "modpack": {
     "id": "terrafirmagreg-modern",
@@ -73,7 +73,8 @@
   "updates": {
     "mode": "archive",
     "allowDowngrade": false,
-    "forceReinstall": false
+    "forceReinstall": false,
+    "changesetUrl": ""
   },
   "integrity": {
     "required": true,

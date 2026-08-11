@@ -1,0 +1,333 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Кнопки лаунчера, перенесённые из WPF (MainWindow.xaml). Отличия Avalonia, из-за которых
+        разметку нельзя было скопировать дословно:
+          * вместо Style + ControlTemplate.Triggers используется ControlTheme и селекторы
+            псевдоклассов: IsMouseOver → :pointerover, IsPressed → :pressed,
+            IsEnabled=False → :disabled, IsChecked → :checked;
+          * ContentPresenter не наследует Content автоматически — его нужно привязать явно;
+          * тень задаётся свойством BoxShadow у Border, отдельного DropShadowEffect нет.
+
+        Применяются они через Theme="{StaticResource ...}", а НЕ через Style="{StaticResource ...}"
+        как в WPF.
+    -->
+
+    <ControlTheme x:Key="TitleBarButton" TargetType="Button">
+        <Setter Property="Width" Value="46" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="FontSize" Value="18" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="8">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource TitleBarButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource TitleBarButtonPressedBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="SoftButton" TargetType="Button">
+        <Setter Property="Height" Value="44" />
+        <Setter Property="Padding" Value="18,0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SoftButtonBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="16"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SoftButtonBorderBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^:disabled /template/ Border#Root">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource PrimaryButtonBorderBrush}" />
+        <Setter Property="Foreground" Value="#251907" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="18"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource PrimaryButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource AccentDarkBrush}" />
+        </Style>
+        <Style Selector="^:disabled /template/ Border#Root">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="SocialButton" TargetType="Button" BasedOn="{StaticResource SoftButton}">
+        <Setter Property="Height" Value="56" />
+        <Setter Property="Padding" Value="22,0" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Background" Value="{DynamicResource SocialButtonBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SocialButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <!-- BoxShadow заменяет DropShadowEffect из WPF: смещение 0, размытие 16. -->
+                <Border x:Name="Root"
+                        CornerRadius="20"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        BoxShadow="0 0 16 0 #5A000000">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SocialButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource SocialButtonBorderBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^:disabled /template/ Border#Root">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </ControlTheme>
+
+    <!-- Строка-ссылка в кабинете: спокойная плитка вместо крупной цветной «таблетки» -->
+    <ControlTheme x:Key="LinkRowButton" TargetType="Button">
+        <Setter Property="Height" Value="46" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="12"
+                        Background="{DynamicResource CardAltBrush}"
+                        BorderBrush="{DynamicResource StrokeBrush}"
+                        BorderThickness="1"
+                        Padding="12,0">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="IconButton" TargetType="Button">
+        <Setter Property="Width" Value="42" />
+        <Setter Property="Height" Value="42" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Background" Value="{DynamicResource IconButtonBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource IconButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="14"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource IconButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource IconButtonBorderBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^:disabled /template/ Border#Root">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="TabButton" TargetType="Button">
+        <Setter Property="Height" Value="44" />
+        <Setter Property="Padding" Value="22,0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="13"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        Padding="{TemplateBinding Padding}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <!-- Карточка сборки в выпадающем списке. В WPF шаблон брал цвета из полей самого элемента
+         (BackgroundBrush/BorderBrushColor); здесь цвета берутся из темы, а выделение выбранной
+         сборки делает псевдокласс :pointerover и рамка акцентом. -->
+    <ControlTheme x:Key="ModpackCardButton" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="14"
+                        Background="{DynamicResource CardBrush}"
+                        BorderBrush="{DynamicResource StrokeBrush}"
+                        BorderThickness="1"
+                        Padding="10">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Center" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="^:pressed /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonPressedBrush}" />
+        </Style>
+    </ControlTheme>
+
+    <!-- Плитка выбора темы в настройках. Без неё Avalonia рисует своё синее выделение,
+         которое не имеет отношения к теме лаунчера. -->
+    <ControlTheme x:Key="ThemeTileItem" TargetType="ListBoxItem">
+        <Setter Property="Margin" Value="0,0,0,10" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        Background="{DynamicResource SoftButtonBackgroundBrush}"
+                        BorderBrush="{DynamicResource SoftButtonBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="14,12">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalAlignment="Stretch" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^:selected /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="DropdownToggle" TargetType="ToggleButton">
+        <Setter Property="Height" Value="46" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Background" Value="{DynamicResource GlassFillBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GlassStrokeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border x:Name="Root"
+                        CornerRadius="14"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        Padding="{TemplateBinding Padding}">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^:pointerover /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}" />
+        </Style>
+        <Style Selector="^:checked /template/ Border#Root">
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        </Style>
+    </ControlTheme>
+
+</ResourceDictionary>

@@ -105,6 +105,7 @@ public partial class App : System.Windows.Application
             $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Источник: {source}{Environment.NewLine}{message}{Environment.NewLine}{new string('-', 60)}{Environment.NewLine}";
 
         var logPath = TryWriteCrashLog(logText);
+        TrySendCrashTelemetry(source, exception);
 
         try
         {
@@ -121,6 +122,30 @@ public partial class App : System.Windows.Application
         catch
         {
             // В среде без GUI окно показать нельзя — лог уже записан.
+        }
+    }
+
+    // Раньше краш App только писался в launcher-crash.log и показывался в окне — на сервер не уходил.
+    // Теперь шлём его в телеметрию, чтобы краши лаунчера были видны в агрегате, а не по жалобам.
+    private static void TrySendCrashTelemetry(string source, Exception? exception)
+    {
+        try
+        {
+            var properties = new Dictionary<string, object?>
+            {
+                ["source"] = source,
+                ["exceptionType"] = exception?.GetType().FullName ?? "unknown",
+                ["innerType"] = exception?.InnerException?.GetType().FullName,
+                ["message"] = Services.TelemetrySanitizer.Sanitize(exception?.Message ?? string.Empty, 220),
+                ["site"] = Services.TelemetrySanitizer.ResolveSite(exception, "Launcher.App.")
+            };
+
+            var version = typeof(App).Assembly.GetName().Version?.ToString() ?? "unknown";
+            Services.CrashTelemetryService.TrySendBlocking("launcher_crashed", properties, version);
+        }
+        catch
+        {
+            // Отправка телеметрии не должна мешать обработке краша.
         }
     }
 

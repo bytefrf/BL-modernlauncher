@@ -40,7 +40,7 @@ public partial class SupportWindow : Window
         _launcherVersion = launcherVersion;
         _modpackVersion = modpackVersion;
         _themeId = themeId;
-        LauncherThemeCatalog.ApplyTheme(Resources, _themeId);
+        LauncherThemeBrushes.ApplyTheme(Resources, _themeId);
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -110,7 +110,7 @@ public partial class SupportWindow : Window
             RenderThread(thread);
             StatusTextBlock.Text = string.IsNullOrWhiteSpace(email)
                 ? "Сообщение отправлено. Ответ появится в этом окне."
-                : "Сообщение отправлено. Ответ появится в этом окне и может быть продублирован на email.";
+                : $"Сообщение отправлено. Ответ появится в этом окне и придёт на {email}.";
         });
     }
 
@@ -164,14 +164,11 @@ public partial class SupportWindow : Window
     private void RenderThread(SupportThreadDto thread)
     {
         var ticket = thread.Ticket;
+        // Почту в шапку обращения не выводим и с сервера не подставляем: адрес — личные данные, он
+        // живёт только в настройках на компьютере игрока и в поле ввода, которое игрок видит сам.
         TicketInfoTextBlock.Text = ticket is null
             ? "Диалог будет создан после первого сообщения."
-            : $"Обращение {ticket.TicketKey} | статус: {TranslateStatus(ticket.Status)} | обновлено: {ticket.UpdatedAt}{BuildEmailStatus(ticket.Email)}";
-
-        if (ticket is not null && !string.IsNullOrWhiteSpace(ticket.Email) && string.IsNullOrWhiteSpace(EmailTextBox.Text))
-        {
-            EmailTextBox.Text = ticket.Email;
-        }
+            : $"Обращение {ticket.TicketKey} | статус: {TranslateStatus(ticket.Status)} | обновлено: {ticket.UpdatedAt}";
 
         MessagesItemsControl.ItemsSource = thread.Messages
             .Select(message => new SupportMessageViewModel(
@@ -222,11 +219,6 @@ public partial class SupportWindow : Window
         {
             return false;
         }
-    }
-
-    private static string BuildEmailStatus(string email)
-    {
-        return string.IsNullOrWhiteSpace(email) ? string.Empty : $" | email: {email}";
     }
 
     private sealed record SupportMessageViewModel(string Header, string Message);

@@ -22,11 +22,15 @@ namespace Launcher.App;
 
 public partial class MainWindow : Window, IDisposable
 {
-    private const string ServerStatsUrl = "https://bl-modern.ru/api/stats.php";
     private const string TelemetryUrl = "https://bl-modern.ru/api/telemetry.php";
     private const string SupportLogsUrl = "https://bl-modern.ru/api/support_logs.php";
-    private const string SupportTicketsUrl = "https://bl-modern.ru/api/support_tickets.php";
+    // Адрес живёт в клиенте — им же пользуется Avalonia-версия.
+    private const string SupportTicketsUrl = Services.SupportChatClient.DefaultEndpoint;
     private const int LaunchSuccessThresholdSeconds = 45;
+    // Единый HttpClient имеет таймаут 20 минут (для крупных загрузок). Для лёгких запросов
+    // (новости/статистика/телеметрия) используем отдельный короткий таймаут, иначе зависший
+    // endpoint блокирует инициализацию почти на 20 минут.
+    private const int LightRequestTimeoutSeconds = 15;
 
     // Discord Application ID (Developer Portal → New Application → General → Application ID).
     // Пока не задан — Rich Presence просто отключён и ни на что не влияет.
@@ -43,8 +47,12 @@ public partial class MainWindow : Window, IDisposable
     };
     private readonly ManifestClient _manifestClient;
     private readonly ModpackManifestClient _modpackManifestClient;
+    private readonly CatalogClient _catalogClient;
     private readonly NewsClient _newsClient;
-    private readonly ServerStatsClient _serverStatsClient;
+    private readonly PlayerStatsClient _playerStatsClient;
+    private readonly OptionalModsService _optionalModsService;
+    private readonly SkinClient _skinClient;
+    private readonly MinecraftServerPinger _serverPinger = new();
     private readonly TelemetryClient _telemetryClient;
     private readonly SupportLogService _supportLogService;
     private readonly SupportChatClient _supportChatClient;
@@ -53,6 +61,8 @@ public partial class MainWindow : Window, IDisposable
     private LauncherConfiguration? _configuration;
     private LauncherManifest? _manifest;
     private ModpackManifest? _modpackManifest;
+    private CatalogManifest? _catalog;
+    private string _selectedModpackId = string.Empty;
     private UserSettings _userSettings = new();
     private readonly DispatcherTimer _backgroundRotationTimer = new();
     private readonly DispatcherTimer _serverStatsTimer = new();
@@ -63,19 +73,31 @@ public partial class MainWindow : Window, IDisposable
     private string _currentNewsUrl = string.Empty;
     private PrimaryActionState _primaryActionState = PrimaryActionState.Play;
     private WinForms.NotifyIcon? _trayIcon;
+    private Drawing.Icon? _trayIconImage;
     private bool _allowClose;
     private bool _isBusy;
     private bool _launcherUpdateAvailable;
     private string _launcherUpdateVersion = string.Empty;
+    // Профиль игрока (часы/ачивки) и звуки интерфейса. Профиль лежит в отдельном файле, чтобы
+    // его можно было позже синхронизировать с сайтом, не трогая настройки.
+    private PlayerProfile _playerProfile = new();
+    private readonly LauncherSoundService _soundService = new();
+    private readonly Queue<AchievementToastContent> _achievementToastQueue = new();
+    private bool _achievementToastRunning;
+    private SiteLevel? _siteLevel;
+    private DateTime _lastSiteSyncUtc = DateTime.MinValue;
     public MainWindow()
     {
         InitializeComponent();
-        LauncherThemeCatalog.ApplyTheme(Resources, LauncherThemeCatalog.DefaultThemeId);
+        LauncherThemeBrushes.ApplyTheme(Resources, LauncherThemeCatalog.DefaultThemeId);
         ApplyResponsiveFixedWindowSize();
         _manifestClient = new ManifestClient(_httpClient);
         _modpackManifestClient = new ModpackManifestClient(_httpClient);
+        _catalogClient = new CatalogClient(_httpClient);
         _newsClient = new NewsClient(_httpClient);
-        _serverStatsClient = new ServerStatsClient(_httpClient);
+        _playerStatsClient = new PlayerStatsClient(_httpClient);
+        _optionalModsService = new OptionalModsService(_httpClient);
+        _skinClient = new SkinClient(_httpClient);
         _telemetryClient = new TelemetryClient(_httpClient);
         _supportLogService = new SupportLogService(_httpClient);
         _supportChatClient = new SupportChatClient(_httpClient);
@@ -89,7 +111,11 @@ public partial class MainWindow : Window, IDisposable
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await RunSafeAsync(InitializeAsync);
-    private async void PlayButton_Click(object sender, RoutedEventArgs e) => await RunSafeAsync(PlayAsync);
+    private async void PlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        AnimatePlayButtonPress();
+        await RunSafeAsync(() => PlayAsync());
+    }
     private async void SettingsButton_Click(object sender, RoutedEventArgs e) => await RunSafeAsync(OpenSettingsAsync);
     private void OpenNewsButton_Click(object sender, RoutedEventArgs e) => OpenCurrentNews();
     private void SupportButton_Click(object sender, RoutedEventArgs e) => OpenSupportWindow();
@@ -118,6 +144,7 @@ public partial class MainWindow : Window, IDisposable
     private void WebsiteButton_Click(object sender, RoutedEventArgs e) => OpenExternalUrl("https://bl-modern.ru/");
     private void BoostyButton_Click(object sender, RoutedEventArgs e) => OpenExternalUrl("https://boosty.to/bytef");
     private void DiscordButton_Click(object sender, RoutedEventArgs e) => OpenExternalUrl("https://discord.gg/FpV9bRggvt");
+    private void VkButton_Click(object sender, RoutedEventArgs e) => OpenExternalUrl("https://vk.com/blmodern");
 
     private async Task InitializeAsync()
     {
@@ -133,14 +160,39 @@ public partial class MainWindow : Window, IDisposable
 
         InitializeBackgroundSlideshow();
         _userSettings = UserSettings.Load(_configuration.GetUserSettingsPath());
-        LauncherThemeCatalog.ApplyTheme(Resources, _userSettings.ThemeId);
+        LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
         EnsureTelemetryIdentity();
+        _playerProfile = PlayerProfile.Load(_configuration.GetPlayerProfilePath());
+        _soundService.Enabled = _userSettings.SoundEnabled;
         UsernameTextBox.Text = _userSettings.Username;
+        UsernameTextBox.TextChanged += (_, _) =>
+        {
+            UpdateProfileAvatar();
+            UpdateUsernameIndicator();
+        };
+        UpdateUsernameIndicator();
+        RefreshProfileUi();
+        SetActiveTab(account: false);
+
+        // Достижения и уровень — с сайта (тот же движок, что в кабинете). В фоне, чтобы не держать запуск.
+        _ = RunBackgroundAsync(() => RefreshSiteAchievementsAsync(force: true));
+        _ = RunBackgroundAsync(() => RefreshSkinAsync(force: true));
+
+        // Отладочный показ тоста: проверить вид и звук, не играя сессию.
+        if (Environment.GetCommandLineArgs().Any(argument => argument.Equals("--test-achievement", StringComparison.OrdinalIgnoreCase)))
+        {
+            EnqueueAchievementToast(new AchievementToastContent("⏱", "Время в игре VI", "Достичь 100 ч · +120 XP"));
+            EnqueueAchievementToast(new AchievementToastContent("💎", "Расхититель", "500 сундуков и 50 000 блоков · +180 XP"));
+        }
         UpdateDisplayedInstallPath();
         AppendLog($"Config: {_configuration.ConfigPath}");
         AppendLog($"Settings: {_configuration.GetUserSettingsPath()}");
 
-        if (_configuration.UsesDirectModpackArchive())
+        if (_configuration.UsesCatalog())
+        {
+            await InitializeCatalogAsync();
+        }
+        else if (_configuration.UsesDirectModpackArchive())
         {
             await RefreshModpackManifestAsync();
         }
@@ -338,6 +390,23 @@ public partial class MainWindow : Window, IDisposable
         SetBackgroundImage(_backgroundImagePaths[_currentBackgroundIndex]);
     }
 
+    // Целевая ширина декодирования фона ≈ ширина окна в физических пикселях (с учётом DPI), с разумным
+    // потолком. Меньше декодировать нельзя (будет мыло), больше — бессмысленно (окно фиксированной ширины).
+    private int ResolveBackgroundDecodeWidth()
+    {
+        try
+        {
+            var dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+            var logicalWidth = ActualWidth > 0 ? ActualWidth : Width;
+            var pixels = (int)Math.Ceiling(Math.Max(logicalWidth, 800) * dpiScale);
+            return Math.Clamp(pixels, 1000, 2400);
+        }
+        catch
+        {
+            return 1600;
+        }
+    }
+
     private void SetBackgroundImage(string imagePath)
     {
         try
@@ -347,6 +416,10 @@ public partial class MainWindow : Window, IDisposable
             bitmap.UriSource = new Uri(imagePath, UriKind.Absolute);
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
             bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+            // Скриншоты-фоны бывают 3440x1377/2560x1440 — в полном разрешении они едят десятки МБ
+            // и дорого масштабируются каждый кадр. Декодируем под ширину окна (с запасом), это
+            // кратно снижает память и нагрузку на отрисовку фона.
+            bitmap.DecodePixelWidth = ResolveBackgroundDecodeWidth();
             bitmap.EndInit();
             bitmap.Freeze();
 
@@ -397,7 +470,7 @@ public partial class MainWindow : Window, IDisposable
     private void ApplyResponsiveFixedWindowSize()
     {
         var workArea = SystemParameters.WorkArea;
-        var targetSize = SelectWindowSize(workArea.Width, workArea.Height);
+        var targetSize = GetForcedWindowSize() ?? SelectWindowSize(workArea.Width, workArea.Height);
         Width = targetSize.Width;
         Height = targetSize.Height;
         MinWidth = targetSize.Width;
@@ -408,26 +481,59 @@ public partial class MainWindow : Window, IDisposable
         Top = workArea.Top + (workArea.Height - Height) / 2;
     }
 
+    /// <summary>
+    /// Размер окна подбирается ПЛАВНО от рабочей области, а не ступенями. Раньше было четыре
+    /// фиксированных пресета, из-за чего на разных мониторах интерфейс заметно «прыгал» и
+    /// появлялись пустоты. Пропорции держим близко к 16:9 и вписываемся в рабочую область.
+    /// </summary>
     private static System.Windows.Size SelectWindowSize(double workWidth, double workHeight)
     {
-        if (workWidth >= 1400 && workHeight >= 860)
+        const double minWidth = 980;
+        const double minHeight = 560;
+        const double maxWidth = 1440;
+        const double maxHeight = 810;
+
+        // Оставляем поля вокруг окна, чтобы оно не липло к краям и к панели задач.
+        var availableWidth = Math.Max(minWidth, workWidth - 80);
+        var availableHeight = Math.Max(minHeight, workHeight - 80);
+
+        var width = Math.Clamp(workWidth * 0.78, minWidth, maxWidth);
+        var height = Math.Clamp(width * 9 / 16, minHeight, maxHeight);
+
+        // Если по высоте не влезли — пересчитываем ширину от высоты, сохраняя пропорции.
+        if (height > availableHeight)
         {
-            return new System.Windows.Size(1360, 720);
+            height = availableHeight;
+            width = Math.Clamp(height * 16 / 9, minWidth, maxWidth);
         }
 
-        if (workWidth >= 1240 && workHeight >= 760)
+        return new System.Windows.Size(Math.Min(width, availableWidth), Math.Min(height, availableHeight));
+    }
+
+    /// <summary>
+    /// Отладочный размер окна: `--window-size=1040x600`. Нужен, чтобы проверять вёрстку под разные
+    /// разрешения, не меняя разрешение экрана.
+    /// </summary>
+    private static System.Windows.Size? GetForcedWindowSize()
+    {
+        foreach (var argument in Environment.GetCommandLineArgs())
         {
-            return new System.Windows.Size(1200, 640);
+            if (!argument.StartsWith("--window-size=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var parts = argument["--window-size=".Length..].Split('x', 'X');
+            if (parts.Length == 2 &&
+                double.TryParse(parts[0], out var width) &&
+                double.TryParse(parts[1], out var height) &&
+                width > 200 && height > 200)
+            {
+                return new System.Windows.Size(width, height);
+            }
         }
 
-        if (workWidth >= 1080 && workHeight >= 700)
-        {
-            return new System.Windows.Size(1040, 600);
-        }
-
-        return new System.Windows.Size(
-            Math.Max(900, Math.Min(980, workWidth - 40)),
-            Math.Max(540, Math.Min(580, workHeight - 40)));
+        return null;
     }
 
     private async Task VerifyFilesAsync()
@@ -437,7 +543,19 @@ public partial class MainWindow : Window, IDisposable
         UpdatePrimaryActionButton();
     }
 
-    private async Task PlayAsync()
+    // Вход на конкретный сервер с карточки: тот же сценарий, что и «Играть», только игра сразу
+    // подключается к серверу. Проверки ника и установки сборки при этом никуда не деваются.
+    private async void JoinServerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: string host } || string.IsNullOrWhiteSpace(host))
+        {
+            return;
+        }
+
+        await RunSafeAsync(() => PlayAsync(host));
+    }
+
+    private async Task PlayAsync(string? quickPlayServer = null)
     {
         var launchAttemptId = Guid.NewGuid().ToString("N");
         var launchStage = "metadata_refresh";
@@ -460,7 +578,7 @@ public partial class MainWindow : Window, IDisposable
         });
         try
         {
-            var launchManifest = _configuration.UsesDirectModpackArchive()
+            var launchManifest = (_modpackManifest is not null || _configuration.UsesDirectModpackArchive())
                 ? CreateArchiveModeLaunchManifest()
                 : _manifest ?? throw new InvalidOperationException("Launcher manifest is not loaded.");
 
@@ -476,6 +594,14 @@ public partial class MainWindow : Window, IDisposable
             {
                 installTelemetry = await EnsureGameFilesAsync(operationId: launchAttemptId, trigger: "play_install_only");
                 UpdatePrimaryActionButton();
+                _soundService.PlayReady();
+                return;
+            }
+
+            // Установку с дефолтным ником разрешаем (файлы качать не мешает), а вот запуск — нет:
+            // иначе игрок заходит на сервер как «Player».
+            if (!EnsureUsernameSelected())
+            {
                 return;
             }
 
@@ -501,7 +627,12 @@ public partial class MainWindow : Window, IDisposable
             });
 
             var launcher = new MinecraftLaunchService();
-            var result = await launcher.LaunchAsync(effectiveConfiguration, launchManifest, _userSettings);
+            var result = await launcher.LaunchAsync(effectiveConfiguration, launchManifest, _userSettings, quickPlayServer);
+            if (!string.IsNullOrWhiteSpace(quickPlayServer))
+            {
+                AppendLog($"Quick play: connecting to {quickPlayServer}");
+            }
+
             AppendLog($"Launch: {result.FileName}");
             AppendLog(result.ArgumentsPreview);
 
@@ -515,6 +646,15 @@ public partial class MainWindow : Window, IDisposable
 
             FooterTextBlock.Text = "Minecraft launched";
             UpdateDiscordPresence(DiscordPlayingDetails, DiscordPlayingState);
+
+            if (_userSettings.CloseOnGameStart)
+            {
+                // Пользователь выбрал закрывать лаунчер при запуске игры. Сама игра запущена отдельным
+                // процессом (UseShellExecute) и продолжит работать; мониторинг краша при этом отключается.
+                ExitApplication();
+                return;
+            }
+
             MinimizeToTray("Minecraft запущен. Лаунчер свернут в трей.");
             _ = MonitorMinecraftProcessAsync(
                 result.Process,
@@ -537,7 +677,11 @@ public partial class MainWindow : Window, IDisposable
             throw new InvalidOperationException("Launcher configuration is not loaded.");
         }
 
-        if (_configuration.UsesDirectModpackArchive())
+        if (_configuration.UsesCatalog() && _catalog is not null)
+        {
+            await SelectModpackAsync(string.IsNullOrWhiteSpace(_selectedModpackId) ? _catalog.Modpacks[0].Id : _selectedModpackId);
+        }
+        else if (_configuration.UsesDirectModpackArchive())
         {
             await RefreshModpackManifestAsync();
         }
@@ -558,7 +702,7 @@ public partial class MainWindow : Window, IDisposable
         _manifest = await _manifestClient.GetManifestAsync(_configuration.ManifestUrl);
         FooterTextBlock.Text = $"Pack {_manifest.Game.Version}";
         AppendLog($"Launcher manifest loaded: {_manifest.Game.Version}");
-        await RefreshServerStatsAsync();
+        RefreshServerStatsInBackground(showLoading: true);
         UpdateDisplayedInstallPath();
         ShowNewsFallback("Новости появятся после подключения newsUrl в манифесте сборки.");
         SetStatus("Manifest loaded");
@@ -576,38 +720,35 @@ public partial class MainWindow : Window, IDisposable
         {
             var cachedManifestPath = _configuration.GetCachedModpackManifestPath();
             SetStatus("Loading modpack manifest...");
-            try
+
+            // Цепочка «сайт → кэш → вшитый резерв» живёт в ядре: она не про интерфейс,
+            // и Avalonia-версия использует ровно её же.
+            var resolution = await new ModpackManifestResolver(_modpackManifestClient)
+                .ResolveAsync(_configuration.ModpackManifestUrl, cachedManifestPath, AppendLog);
+            _modpackManifest = resolution.Manifest;
+
+            if (resolution.Source != ModpackManifestSource.Remote)
             {
-                _modpackManifest = await _modpackManifestClient.GetManifestAsync(_configuration.ModpackManifestUrl);
-                await _modpackManifestClient.SaveManifestCacheAsync(_modpackManifest, cachedManifestPath);
-                AppendLog($"Modpack manifest cache updated: {cachedManifestPath}");
-            }
-            catch (HttpRequestException exception) when (IsNetworkNameResolutionError(exception))
-            {
-                AppendLog($"Modpack manifest network error: {exception.Message}");
-                _modpackManifest = await LoadFallbackModpackManifestAsync(cachedManifestPath, "Server is unavailable");
-                ShowNewsFallback("Не удалось подключиться к сайту. Лаунчер использует последний сохраненный манифест или встроенный резерв.");
-            }
-            catch (TaskCanceledException exception)
-            {
-                AppendLog($"Modpack manifest timeout: {exception.Message}");
-                _modpackManifest = await LoadFallbackModpackManifestAsync(cachedManifestPath, "Server timeout");
-                ShowNewsFallback("Сайт долго не отвечает. Лаунчер использует последний сохраненный манифест или встроенный резерв.");
+                SetStatus($"{resolution.Reason}, using {(resolution.Source == ModpackManifestSource.Cached ? "cached" : "embedded")} manifest");
+                ShowNewsFallback(resolution.Reason == "Server timeout"
+                    ? "Сайт долго не отвечает. Лаунчер использует последний сохраненный манифест или встроенный резерв."
+                    : "Не удалось подключиться к сайту. Лаунчер использует последний сохраненный манифест или встроенный резерв.");
             }
 
             Title = _modpackManifest.Launcher.Title;
             ServerTitleTextBlock.Text = _modpackManifest.Launcher.Title;
-            await RefreshServerStatsAsync();
+            RefreshServerStatsInBackground(showLoading: true);
             UpdateDisplayedInstallPath();
             FooterTextBlock.Text = $"{_modpackManifest.Modpack.Name} {_modpackManifest.Modpack.Version}";
-            await RefreshNewsAsync();
+            _ = RunBackgroundAsync(RefreshNewsAsync);
+            _ = RunBackgroundAsync(RefreshOptionalModsCatalogAsync);
             SetStatus("Modpack manifest loaded");
             AppendLog($"Modpack manifest loaded: {_modpackManifest.Modpack.Name} {_modpackManifest.Modpack.Version}");
             UpdatePrimaryActionButton();
             return;
         }
 
-        await RefreshServerStatsAsync();
+        RefreshServerStatsInBackground(showLoading: true);
         UpdateDisplayedInstallPath();
         ShowNewsFallback("Новости доступны при запуске через modpack-manifest.json.");
         SetStatus("Archive mode is ready");
@@ -615,45 +756,244 @@ public partial class MainWindow : Window, IDisposable
         UpdatePrimaryActionButton();
     }
 
-    private async Task<ModpackManifest> LoadFallbackModpackManifestAsync(string cachedManifestPath, string reason)
+    private static readonly Media.Brush ModpackSelectedBg = CreateFrozenBrush(0x2E, 0x46, 0x3A);
+    private static readonly Media.Brush ModpackSelectedBorder = CreateFrozenBrush(0xE0, 0xB2, 0x4F);
+    private static readonly Media.Brush ModpackNormalBorder = CreateFrozenBrush(0x3A, 0x4A, 0x42);
+
+    private async Task InitializeCatalogAsync()
     {
+        SetStatus("Загрузка каталога сборок...");
         try
         {
-            var cached = await _modpackManifestClient.GetCachedManifestAsync(cachedManifestPath);
-            SetStatus($"{reason}, using cached manifest");
-            AppendLog($"Using cached modpack manifest: {cachedManifestPath}");
-            return cached;
+            _catalog = await _catalogClient.GetCatalogAsync(_configuration!.CatalogUrl);
         }
-        catch (Exception cacheException)
+        catch (Exception exception)
         {
-            AppendLog($"Cached modpack manifest unavailable: {cacheException.Message}");
-            var embedded = await _modpackManifestClient.GetEmbeddedDefaultManifestAsync();
-            SetStatus($"{reason}, using embedded manifest");
-            AppendLog("Using embedded modpack manifest.");
-            return embedded;
+            AppendLog($"Catalog load failed: {exception.Message}");
+            _configuration!.IsMultiModpackCatalog = false; // фолбэк = одиночный режим, путь не изолируем
+            if (_configuration!.UsesModpackManifest())
+            {
+                await RefreshModpackManifestAsync(); // фолбэк на одиночный манифест
+            }
+            else
+            {
+                ShowNewsFallback("Не удалось загрузить каталог сборок. Проверьте интернет и повторите.");
+                SetStatus("Каталог недоступен");
+            }
+            return;
+        }
+
+        if (_catalog.Modpacks.Count == 0)
+        {
+            ShowNewsFallback("В каталоге пока нет доступных сборок.");
+            SetStatus("Каталог пуст");
+            return;
+        }
+
+        var hasMultiplePacks = ModpackCatalogLogic.ShouldIsolateInstallRoots(_catalog.Modpacks);
+        _configuration!.IsMultiModpackCatalog = hasMultiplePacks;
+        ModpackDropdownHost.Visibility = hasMultiplePacks ? Visibility.Visible : Visibility.Collapsed;
+        // В режиме каталога имя сборки показывает выпадающая кнопка — большой дубль-заголовок прячем.
+        ServerTitleTextBlock.Visibility = hasMultiplePacks ? Visibility.Collapsed : Visibility.Visible;
+
+        var selected = ModpackCatalogLogic.ChoosePreferred(_catalog.Modpacks, _userSettings.SelectedModpackId);
+        if (selected is not null)
+        {
+            await SelectModpackAsync(selected.Id);
         }
     }
 
-    private LauncherManifest CreateArchiveModeLaunchManifest()
+    private async Task SelectModpackAsync(string id)
     {
-        var runtime = _modpackManifest?.Runtime;
-        return new LauncherManifest
+        var entry = _catalog?.Modpacks.FirstOrDefault(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
         {
-            Launcher = new LauncherUpdateInfo
-            {
-                Version = "1.0.52"
-            },
-            Game = new GameDistributionInfo
-            {
-                Version = _modpackManifest?.Modpack.Version ?? _configuration?.ModpackVersion ?? "Modpack",
-                Description = _modpackManifest?.Modpack.Description ?? "Direct archive modpack",
-                MainVersionId = runtime?.MainVersionId ?? "1.20.1-forge-47.3.29",
-                JavaExecutable = string.IsNullOrWhiteSpace(runtime?.JavaExecutable) ? "javaw.exe" : runtime!.JavaExecutable,
-                JavaArguments = runtime?.JvmArgs ?? ["-XX:+UseG1GC"],
-                GameArguments = runtime?.GameArgs ?? []
-            }
-        };
+            return;
+        }
+
+        _selectedModpackId = entry.Id;
+        _userSettings.SelectedModpackId = entry.Id;
+        SaveUserSettings();
+        RebuildModpackSidebar();
+
+        SetStatus($"Загрузка сборки: {entry.Name}");
+        try
+        {
+            _modpackManifest = await _modpackManifestClient.GetManifestAsync(entry.ManifestUrl);
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Modpack manifest load failed ({entry.Id}): {exception.Message}");
+            ShowNewsFallback($"Не удалось загрузить сборку «{entry.Name}».");
+            SetStatus("Ошибка загрузки сборки");
+            return;
+        }
+
+        Title = _modpackManifest.Launcher.Title;
+        var displayName = string.IsNullOrWhiteSpace(entry.Name) ? _modpackManifest.Launcher.Title : entry.Name;
+        ServerTitleTextBlock.Text = displayName;
+        ModpackDropdownText.Text = displayName;
+        UpdateDisplayedInstallPath();
+        FooterTextBlock.Text = $"{_modpackManifest.Modpack.Name} {_modpackManifest.Modpack.Version}";
+        RefreshServerStatsInBackground(showLoading: true);
+        _ = RunBackgroundAsync(RefreshNewsAsync);
+        _ = RunBackgroundAsync(RefreshOptionalModsCatalogAsync);
+        UpdatePrimaryActionButton();
+        SetStatus("Сборка загружена");
+        AppendLog($"Selected modpack: {entry.Id} ({_modpackManifest.Modpack.Version})");
     }
+
+    private async void ModpackItem_Click(object sender, RoutedEventArgs e)
+    {
+        ModpackDropdownButton.IsChecked = false; // закрыть выпадающий список после выбора
+        if (sender is FrameworkElement { Tag: string id } && !id.Equals(_selectedModpackId, StringComparison.OrdinalIgnoreCase))
+        {
+            await RunSafeAsync(() => SelectModpackAsync(id));
+        }
+    }
+
+    private void RebuildModpackSidebar()
+    {
+        if (_catalog is null)
+        {
+            return;
+        }
+
+        var activeBg = ResolveThemeBrush("PanelAltBrush", ModpackSelectedBg);
+        var activeBorder = ResolveThemeBrush("AccentBrush", ModpackSelectedBorder);
+        var idleBorder = ResolveThemeBrush("StrokeBrush", ModpackNormalBorder);
+        ModpackListPanel.ItemsSource = _catalog.Modpacks
+            .Select(m =>
+            {
+                var selected = m.Id.Equals(_selectedModpackId, StringComparison.OrdinalIgnoreCase);
+                var status = GetModpackStatus(m.Id);
+                var playtime = GetModpackPlaytimeText(m.Id);
+                var icon = TryLoadModpackIcon(m.IconUrl);
+
+                return new ModpackListItem(
+                    m.Id,
+                    m.Name,
+                    m.Description ?? string.Empty,
+                    string.IsNullOrWhiteSpace(m.Description) ? Visibility.Collapsed : Visibility.Visible,
+                    string.IsNullOrWhiteSpace(m.Name) ? "?" : char.ToUpperInvariant(m.Name[0]).ToString(),
+                    icon,
+                    icon is null ? Visibility.Collapsed : Visibility.Visible,
+                    status?.Text ?? string.Empty,
+                    status?.Brush ?? Media.Brushes.Gray,
+                    status is null ? Visibility.Collapsed : Visibility.Visible,
+                    playtime,
+                    string.IsNullOrEmpty(playtime) ? Visibility.Collapsed : Visibility.Visible,
+                    selected ? activeBg : Media.Brushes.Transparent,
+                    selected ? activeBorder : idleBorder);
+            })
+            .ToList();
+    }
+
+    private sealed record ModpackStatus(string Text, Media.Brush Brush);
+
+    /// <summary>
+    /// Статус сборки для карточки. Показываем его только там, где он достоверен: для выбранной
+    /// сборки (у неё загружен манифест) и для сборок с явно заданной игроком папкой. Для остальных
+    /// папку пришлось бы угадывать, а ложное «Не установлена» хуже отсутствия бейджа.
+    /// </summary>
+    /// <summary>
+    /// Метка состояния сборки в списке. Само состояние вычисляет ядро, здесь остаётся
+    /// только подобрать кисть под тему.
+    /// </summary>
+    private ModpackStatus? GetModpackStatus(string modpackId)
+    {
+        var state = ModpackCatalogLogic.GetInstallState(modpackId, _selectedModpackId, _primaryActionState, _userSettings);
+        if (state == ModpackInstallState.Unknown)
+        {
+            return null;
+        }
+
+        var brush = state switch
+        {
+            ModpackInstallState.UpdateAvailable => ResolveThemeBrush("AccentBrush", Media.Brushes.Goldenrod),
+            ModpackInstallState.Installed => ServerOnlineBrush,
+            _ => ResolveThemeBrush("MutedBrush", Media.Brushes.Gray)
+        };
+
+        return new ModpackStatus(ModpackCatalogLogic.GetInstallStateText(state), brush);
+    }
+
+    // Проверка маркера живёт в ядре: раньше здесь была вторая копия, которая не раскрывала
+    // %AppData% на Linux и macOS.
+    private static bool IsModpackInstalledAt(string root, string modpackId)
+        => ModpackInstallMarker.IsInstalledAt(root, modpackId);
+
+    private string GetModpackPlaytimeText(string modpackId)
+    {
+        if (_playerProfile.Modpacks.TryGetValue(modpackId, out var stats) && stats.PlaySeconds >= 60)
+        {
+            return $"{FormatPlaytime(stats.PlaySeconds)} в игре";
+        }
+
+        return string.Empty;
+    }
+
+    private readonly Dictionary<string, ImageSource> _modpackIconCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Обложка сборки из каталога. Грузится асинхронно самим WPF; ошибки сети/формата гасим,
+    /// тогда в карточке остаётся буквенная заглушка.
+    /// </summary>
+    private ImageSource? TryLoadModpackIcon(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (_modpackIconCache.TryGetValue(url, out var cached))
+        {
+            return cached;
+        }
+
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = uri;
+            image.DecodePixelWidth = 104;
+            image.EndInit();
+            image.DownloadFailed += (_, _) => AppendLog($"Modpack icon download failed: {url}");
+            image.DecodeFailed += (_, _) => AppendLog($"Modpack icon decode failed: {url}");
+
+            _modpackIconCache[url] = image;
+            return image;
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Modpack icon unavailable ({url}): {exception.Message}");
+            return null;
+        }
+    }
+
+    public sealed record ModpackListItem(
+        string Id,
+        string Name,
+        string Description,
+        Visibility DescriptionVisibility,
+        string InitialLetter,
+        ImageSource? IconSource,
+        Visibility IconVisibility,
+        string StatusText,
+        Media.Brush StatusBrush,
+        Visibility StatusVisibility,
+        string PlaytimeText,
+        Visibility PlaytimeVisibility,
+        Media.Brush BackgroundBrush,
+        Media.Brush BorderBrushColor);
+
+    private LauncherManifest CreateArchiveModeLaunchManifest()
+        => LauncherManifestFactory.CreateArchiveModeLaunchManifest(_modpackManifest, _configuration);
 
     private async Task<InstallOperationTelemetry> EnsureGameFilesAsync(bool forceArchiveInstall = false, string? operationId = null, string trigger = "manual")
     {
@@ -663,8 +1003,10 @@ public partial class MainWindow : Window, IDisposable
         }
 
         SaveUserSettings();
-        var overallStopwatch = Stopwatch.StartNew();
-        var mode = _configuration.UsesDirectModpackArchive() ? "archive" : "sync";
+        // Время операции теперь измеряет сам оркестратор и возвращает в результате.
+        // В режиме каталога ModpackManifestUrl пуст, но манифест выбранной сборки загружен — это тоже archive-режим.
+        var useArchiveMode = _modpackManifest is not null || _configuration.UsesDirectModpackArchive();
+        var mode = useArchiveMode ? "archive" : "sync";
         _ = TrackTelemetryAsync("install_started", new Dictionary<string, object?>
         {
             ["mode"] = mode,
@@ -673,61 +1015,63 @@ public partial class MainWindow : Window, IDisposable
             ["operationId"] = operationId
         });
 
-        if (_configuration.UsesDirectModpackArchive())
+        if (useArchiveMode)
         {
             EnsureEnoughDiskSpace();
-            var runtimeInstaller = new RuntimeInstallService(_httpClient);
-            var runtimeProgress = ScaleProgress(0, 45);
-            await runtimeInstaller.EnsureRuntimeAsync(_configuration, _modpackManifest, _userSettings, runtimeProgress, CancellationToken.None);
+        }
 
-            var installer = new ArchiveInstallService(_httpClient);
-            var archiveProgress = ScaleProgress(45, 100);
-            var archiveSummary = await installer.InstallAsync(_configuration, _modpackManifest, _userSettings, archiveProgress, CancellationToken.None, forceArchiveInstall);
-            AppendLog(archiveSummary.Installed ? $"Archive installed to {archiveSummary.InstallPath}" : $"Archive already installed at {archiveSummary.InstallPath}");
-            SetStatus(forceArchiveInstall ? "Проверка модпака завершена" : "Модпак установлен");
-            LauncherProgressBar.Value = 100;
-            FooterTextBlock.Text = forceArchiveInstall ? "Проверка модпака завершена" : "Модпак установлен";
-            var durationMs = overallStopwatch.ElapsedMilliseconds;
+        // Порядок действий переехал в ядро (GameInstallOrchestrator) — окну остаётся показать
+        // результат. Тексты и события телеметрии сохранены прежними.
+        var outcome = await new GameInstallOrchestrator(_httpClient).EnsureGameFilesAsync(
+            _configuration,
+            _modpackManifest,
+            _manifest,
+            _userSettings,
+            new GameInstallCallbacks(
+                AppendLog,
+                ScaleProgress(0, 45),
+                ScaleProgress(45, 100),
+                new Progress<FileSyncProgress>(UpdateProgress),
+                SyncOptionalModsAsync),
+            forceArchiveInstall,
+            useArchiveMode ? null : CreateEffectiveConfiguration());
+
+        LauncherProgressBar.Value = 100;
+
+        if (useArchiveMode)
+        {
+            SetStatus(outcome.StatusText);
+            FooterTextBlock.Text = outcome.StatusText;
             _ = TrackTelemetryAsync("install_completed", new Dictionary<string, object?>
             {
-                ["mode"] = "archive",
-                ["installed"] = archiveSummary.Installed,
-                ["durationMs"] = durationMs,
+                ["mode"] = outcome.Mode,
+                ["installed"] = outcome.Installed,
+                ["durationMs"] = outcome.DurationMs,
                 ["force"] = forceArchiveInstall,
                 ["trigger"] = trigger,
                 ["operationId"] = operationId,
-                ["changedFiles"] = archiveSummary.Installed ? 1 : 0
+                ["changedFiles"] = outcome.ChangedFiles
             });
             UpdatePrimaryActionButton();
-            return new InstallOperationTelemetry("archive", archiveSummary.Installed, durationMs, archiveSummary.Installed ? 1 : 0);
+            return new InstallOperationTelemetry(outcome.Mode, outcome.Installed, outcome.DurationMs, outcome.ChangedFiles);
         }
 
-        if (_manifest is null)
-        {
-            throw new InvalidOperationException("Manifest is not loaded.");
-        }
-
-        var sync = new FileSyncService(_httpClient);
-        var progress = new Progress<FileSyncProgress>(UpdateProgress);
-        var summary = await sync.SyncAsync(CreateEffectiveConfiguration(), _manifest, progress, CancellationToken.None);
-        AppendLog($"Sync finished. Downloaded: {summary.DownloadedFiles}, skipped: {summary.SkippedFiles}.");
+        // В режиме синхронизации строка состояния короткая, а в подвале — с числом файлов.
         SetStatus("Сборка обновлена");
-        LauncherProgressBar.Value = 100;
-        FooterTextBlock.Text = $"Сборка обновлена, загружено файлов: {summary.DownloadedFiles}";
-        var syncDurationMs = overallStopwatch.ElapsedMilliseconds;
+        FooterTextBlock.Text = outcome.StatusText;
         _ = TrackTelemetryAsync("install_completed", new Dictionary<string, object?>
         {
             ["mode"] = "sync",
-            ["downloadedFiles"] = summary.DownloadedFiles,
-            ["skippedFiles"] = summary.SkippedFiles,
-            ["durationMs"] = syncDurationMs,
+            ["downloadedFiles"] = outcome.ChangedFiles,
+            ["skippedFiles"] = outcome.SkippedFiles,
+            ["durationMs"] = outcome.DurationMs,
             ["force"] = forceArchiveInstall,
             ["trigger"] = trigger,
             ["operationId"] = operationId,
-            ["changedFiles"] = summary.DownloadedFiles
+            ["changedFiles"] = outcome.ChangedFiles
         });
         UpdatePrimaryActionButton();
-        return new InstallOperationTelemetry("sync", summary.DownloadedFiles > 0, syncDurationMs, summary.DownloadedFiles);
+        return new InstallOperationTelemetry("sync", outcome.Installed, outcome.DurationMs, outcome.ChangedFiles);
     }
 
     private void EnsureEnoughDiskSpace()
@@ -752,7 +1096,8 @@ public partial class MainWindow : Window, IDisposable
             GetDefaultInstallRoot(),
             _modpackManifest?.Runtime.MemoryMbDefault ?? 4096,
             _modpackManifest?.Runtime.MemoryMbMin ?? 1024,
-            _modpackManifest?.Runtime.MemoryMbMax ?? 16384)
+            _modpackManifest?.Runtime.MemoryMbMax ?? 16384,
+            _configuration.IsMultiModpackCatalog ? _modpackManifest?.Modpack.Id : null)
         {
             Owner = this
         };
@@ -763,7 +1108,11 @@ public partial class MainWindow : Window, IDisposable
             _userSettings = window.Settings;
             _userSettings.Username = username;
             SaveUserSettings();
-            LauncherThemeCatalog.ApplyTheme(Resources, _userSettings.ThemeId);
+            LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
+            _soundService.Enabled = _userSettings.SoundEnabled;
+            RefreshProfileUi();
+            SetActiveTab(_accountTabActive);
+            RebuildModpackSidebar();
             UpdateDisplayedInstallPath();
             UpdatePrimaryActionButton();
             AppendLog("User settings saved.");
@@ -798,6 +1147,13 @@ public partial class MainWindow : Window, IDisposable
         SetStatus("Обновление лаунчера 0%");
 
         var packageUri = _modpackManifest.ResolveUri(_modpackManifest.Launcher.PackageUrl);
+        // Пакет обновления — исполняемый код, который распакуется и запустится. Качаем только по HTTPS,
+        // чтобы исключить MITM-подмену при незащищённом транспорте.
+        if (!packageUri.IsFile && !packageUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Обновление лаунчера должно скачиваться по HTTPS.");
+        }
+
         var progress = new Progress<LauncherSelfUpdateProgress>(updateProgress =>
         {
             LauncherProgressBar.Value = updateProgress.Percentage;
@@ -901,11 +1257,24 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
-    private static bool IsNetworkNameResolutionError(HttpRequestException exception)
+    // Фоновые обновления (статус серверов, новости) НЕ должны блокироваться флагом _isBusy и не трогают
+    // кнопки — иначе при вызове из переключения сборки (которое уже в RunSafeAsync) они бы не выполнились.
+    private async Task RunBackgroundAsync(Func<Task> action)
     {
-        return exception.InnerException is SocketException socketException
-            && socketException.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain;
+        try
+        {
+            await action();
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Background task error: {exception.Message}");
+        }
     }
+
+    // Реализация переехала в ядро вместе с разрешением манифеста — тем же кодом
+    // пользуется Avalonia-версия.
+    private static bool IsNetworkNameResolutionError(HttpRequestException exception)
+        => ModpackManifestResolver.IsNetworkNameResolutionError(exception);
 
     private static string CreateUserErrorMessage(Exception exception)
     {
@@ -990,43 +1359,75 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
-    private string WriteErrorLog(ErrorInfo errorInfo, Exception exception)
+    // Авто-отправка крэш-бандла без участия игрока: при краше игры сам собирает пакет логов
+    // (latest.log/stderr/hs_err/crash-report) и шлёт на сервер. Так причину видно даже если игрок
+    // не нажмёт «Отправить в поддержку». Уважает отключённую телеметрию.
+    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle)
     {
+        if (!_userSettings.TelemetryEnabled)
+        {
+            return;
+        }
+
         try
         {
-            var installRoot = _configuration is null
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ForgeLauncher")
-                : GetEffectiveInstallRoot();
-            var logRoot = Path.Combine(installRoot, ".launcher", "logs");
-            Directory.CreateDirectory(logRoot);
+            EnsureTelemetryIdentity();
+            var username = await Dispatcher.InvokeAsync(GetUsername);
+            var launcherVersion = GetLauncherVersion();
+            var modpackVersion = GetTelemetryModpackVersion();
 
-            var logPath = Path.Combine(logRoot, $"launcher-error-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-            var content = new StringBuilder()
-                .AppendLine($"Время: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
-                .AppendLine($"Заголовок: {errorInfo.Title}")
-                .AppendLine($"Описание: {errorInfo.Summary}")
-                .AppendLine()
-                .AppendLine("Что сделать:")
-                .AppendLine(string.Join(Environment.NewLine, errorInfo.Actions.Select(action => "- " + action)))
-                .AppendLine()
-                .AppendLine($"Версия лаунчера: {GetLauncherVersion()}")
-                .AppendLine($"Версия модпака: {GetTelemetryModpackVersion()}")
-                .AppendLine($"Папка установки: {installRoot}")
-                .AppendLine($"Манифест: {_configuration?.ModpackManifestUrl ?? "-"}")
-                .AppendLine($"ОС: {Environment.OSVersion.VersionString}")
-                .AppendLine()
-                .AppendLine("Технические детали:")
-                .AppendLine(exception.ToString())
-                .ToString();
+            var package = await _supportLogService.CreatePackageAsync(
+                installRoot,
+                string.Empty,
+                _userSettings.ClientId,
+                username,
+                launcherVersion,
+                modpackVersion,
+                errorTitle,
+                CancellationToken.None);
 
-            File.WriteAllText(logPath, content);
-            return logPath;
+            var upload = await _supportLogService.UploadAsync(
+                SupportLogsUrl,
+                package.Path,
+                _userSettings.ClientId,
+                username,
+                launcherVersion,
+                modpackVersion,
+                CancellationToken.None);
+
+            await Dispatcher.InvokeAsync(() => AppendLog(upload.Success
+                ? $"Crash bundle auto-sent ({package.IncludedFileCount} files): {upload.Id}"
+                : $"Crash bundle auto-send rejected: {upload.Message}"));
         }
-        catch (Exception logException)
+        catch (Exception exception)
         {
-            AppendLog($"Error log write failed: {logException.Message}");
-            return string.Empty;
+            await Dispatcher.InvokeAsync(() => AppendLog($"Crash bundle auto-send error: {exception.Message}"));
         }
+    }
+
+    private string WriteErrorLog(ErrorInfo errorInfo, Exception exception)
+    {
+        // Формат лога общий с Avalonia-версией (ErrorReport в ядре): саппорт-бандлы с Windows,
+        // Linux и macOS разбираются одинаково.
+        var installRoot = _configuration is null
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ForgeLauncher")
+            : GetEffectiveInstallRoot();
+
+        var logPath = ErrorReport.Write(
+            installRoot,
+            errorInfo,
+            exception,
+            GetLauncherVersion(),
+            GetTelemetryModpackVersion(),
+            _configuration?.ModpackManifestUrl ?? "-",
+            out var failure);
+
+        if (failure is not null)
+        {
+            AppendLog($"Error log write failed: {failure}");
+        }
+
+        return logPath;
     }
 
     private void SaveUserSettings()
@@ -1069,6 +1470,9 @@ public partial class MainWindow : Window, IDisposable
             LauncherName = _configuration.LauncherName,
             ManifestUrl = _configuration.ManifestUrl,
             ModpackManifestUrl = _configuration.ModpackManifestUrl,
+            CatalogUrl = _configuration.CatalogUrl,
+            // Флаг мульти-сборки нужен launch-сервису, чтобы запуск брал ту же per-pack папку, что и установка.
+            IsMultiModpackCatalog = _configuration.IsMultiModpackCatalog,
             ModpackArchiveUrl = _configuration.ModpackArchiveUrl,
             ModpackVersion = _configuration.ModpackVersion,
             ModpackArchiveSha256 = _configuration.ModpackArchiveSha256,
@@ -1085,20 +1489,18 @@ public partial class MainWindow : Window, IDisposable
             return "-";
         }
 
-        return string.IsNullOrWhiteSpace(_modpackManifest?.Install.Root)
-            ? _configuration.GetDistributionRoot()
-            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(_modpackManifest.Install.Root));
+        // Папка по умолчанию для текущей сборки (с учётом подпапки при кастомном пути), но БЕЗ
+        // её персонального override — это и есть «куда поставится, если поле оставить пустым».
+        var catalogModpackId = _configuration.IsMultiModpackCatalog ? _modpackManifest?.Modpack.Id : null;
+        return _userSettings.ResolveInstallRoot(
+            _modpackManifest?.Install.Root ?? string.Empty,
+            _configuration.GetDistributionRoot(),
+            catalogModpackId,
+            ignoreModpackOverride: true);
     }
 
     private string GetEffectiveInstallRoot()
-    {
-        if (_configuration is null)
-        {
-            return "-";
-        }
-
-        return _userSettings.ResolveInstallRoot(_modpackManifest?.Install.Root ?? string.Empty, _configuration.GetDistributionRoot());
-    }
+        => ModpackCatalogLogic.ResolveEffectiveInstallRoot(_configuration, _modpackManifest, _userSettings);
 
     private void UpdateDisplayedInstallPath()
     {
@@ -1107,49 +1509,30 @@ public partial class MainWindow : Window, IDisposable
     private void UpdatePrimaryActionButton()
     {
         _primaryActionState = GetPrimaryActionState();
-        PlayButton.Content = _primaryActionState switch
-        {
-            PrimaryActionState.LauncherUpdate => "Обновить лаунчер",
-            PrimaryActionState.Install => "Установить",
-            PrimaryActionState.Update => "Обновить",
-            _ => "Играть"
-        };
+        PlayButton.Content = PrimaryActionResolver.GetButtonText(_primaryActionState);
+
+        // Статус на карточке выбранной сборки берётся из этого же состояния — держим их в синхроне.
+        RebuildModpackSidebar();
     }
 
     private PrimaryActionState GetPrimaryActionState()
     {
         _launcherUpdateAvailable = IsLauncherUpdateAvailable(out _launcherUpdateVersion);
-        if (_launcherUpdateAvailable)
-        {
-            return PrimaryActionState.LauncherUpdate;
-        }
 
-        if (_configuration is null || !_configuration.UsesDirectModpackArchive())
-        {
-            return PrimaryActionState.Play;
-        }
-
-        var expectedVersion = GetExpectedArchiveVersion();
-        if (string.IsNullOrWhiteSpace(expectedVersion))
-        {
-            return PrimaryActionState.Play;
-        }
-
-        if (_modpackManifest?.Updates.ForceReinstall == true)
-        {
-            return PrimaryActionState.Update;
-        }
-
+        // Маркер читаем здесь: ядру передаём уже прочитанное значение, чтобы решение
+        // оставалось чистой функцией и его можно было проверить тестами.
+        string? installedVersion = null;
         var markerPath = GetArchiveVersionMarkerPath();
-        if (!File.Exists(markerPath))
+        if (File.Exists(markerPath))
         {
-            return PrimaryActionState.Install;
+            installedVersion = File.ReadAllText(markerPath).Trim();
         }
 
-        var installedVersion = File.ReadAllText(markerPath).Trim();
-        return installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase)
-            ? PrimaryActionState.Play
-            : PrimaryActionState.Update;
+        return PrimaryActionResolver.Resolve(
+            _modpackManifest,
+            _configuration,
+            installedVersion,
+            _launcherUpdateAvailable);
     }
 
     private string GetArchiveVersionMarkerPath()
@@ -1158,70 +1541,14 @@ public partial class MainWindow : Window, IDisposable
     }
 
     private string GetExpectedArchiveVersion()
-    {
-        if (_modpackManifest is not null)
-        {
-            return $"{_modpackManifest.Modpack.Id}:{_modpackManifest.Modpack.Version}";
-        }
+        => PrimaryActionResolver.GetExpectedArchiveVersion(_modpackManifest, _configuration);
 
-        if (_configuration is null)
-        {
-            return string.Empty;
-        }
-
-        return string.IsNullOrWhiteSpace(_configuration.ModpackVersion)
-            ? _configuration.ModpackArchiveUrl
-            : _configuration.ModpackVersion;
-    }
-
+    // Сравнение версий и определение обновления лаунчера переехали в ядро.
     private bool IsLauncherUpdateAvailable(out string remoteVersion)
-    {
-        remoteVersion = _modpackManifest?.Launcher.Version?.Trim() ?? string.Empty;
-        if (_modpackManifest is null ||
-            string.IsNullOrWhiteSpace(remoteVersion) ||
-            string.IsNullOrWhiteSpace(_modpackManifest.Launcher.PackageUrl))
-        {
-            return false;
-        }
-
-        return IsRemoteVersionNewer(GetLauncherVersion(), remoteVersion);
-    }
+        => PrimaryActionResolver.IsLauncherUpdateAvailable(_modpackManifest, GetLauncherVersion(), out remoteVersion);
 
     private static bool IsRemoteVersionNewer(string localVersion, string remoteVersion)
-    {
-        var normalizedLocal = NormalizeVersion(localVersion);
-        var normalizedRemote = NormalizeVersion(remoteVersion);
-        if (Version.TryParse(normalizedLocal, out var localParsed) &&
-            Version.TryParse(normalizedRemote, out var remoteParsed))
-        {
-            return remoteParsed > localParsed;
-        }
-
-        return !string.Equals(localVersion, remoteVersion, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeVersion(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "0.0.0";
-        }
-
-        var cleaned = value.Trim();
-        var plusIndex = cleaned.IndexOf('+');
-        if (plusIndex >= 0)
-        {
-            cleaned = cleaned[..plusIndex];
-        }
-
-        var dashIndex = cleaned.IndexOf('-');
-        if (dashIndex >= 0)
-        {
-            cleaned = cleaned[..dashIndex];
-        }
-
-        return cleaned;
-    }
+        => PrimaryActionResolver.IsRemoteVersionNewer(localVersion, remoteVersion);
 
     private async Task RefreshNewsAsync()
     {
@@ -1241,13 +1568,14 @@ public partial class MainWindow : Window, IDisposable
         _currentNewsUrl = newsUrl;
         NewsTitleTextBlock.Text = "Новости загружаются...";
         NewsDateTextBlock.Text = string.Empty;
-        NewsDescriptionTextBlock.Text = "Получаем последние записи с сайта.";
+        SetNewsPlainText("Получаем последние записи с сайта.");
         OpenNewsButton.Visibility = Visibility.Collapsed;
         NewsImageBorder.Visibility = Visibility.Collapsed;
 
         try
         {
-            var news = await _newsClient.GetNewsAsync(newsUrl);
+            using var cts = CreateLightRequestCts();
+            var news = await _newsClient.GetNewsAsync(newsUrl, cts.Token);
             var latest = news.FirstOrDefault();
             if (latest is null)
             {
@@ -1264,60 +1592,900 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
-    private static readonly ServerDefinition[] GameServers =
+    // Дефолтные сервера (tfgm) — используются, если у выбранной сборки нет своих серверов в манифесте.
+    private static readonly ServerDefinition[] DefaultGameServers =
     [
-        new("Сервер #1 — Основной", "play.bl-modern.ru"),
-        new("Сервер #2 — TFGM2", "tfgm2.bl-modern.ru")
+        new("BL-MODERN-TFGM-1", "play.bl-modern.ru"),
+        new("BL-MODERN-TFGM-2", "tfgm2.bl-modern.ru")
     ];
+
+    // Сервера показываем по ВЫБРАННОЙ сборке (из её манифеста). При переключении сборки список
+    // обновляется автоматически — RefreshServerStatsInBackground вызывается в SelectModpackAsync.
+    private IReadOnlyList<ServerDefinition> GetGameServers()
+    {
+        var servers = _modpackManifest?.Servers;
+        if (servers is { Count: > 0 })
+        {
+            var mapped = servers
+                .Where(server => !string.IsNullOrWhiteSpace(server.Host))
+                .Select(server => new ServerDefinition(
+                    string.IsNullOrWhiteSpace(server.Name) ? server.Host : server.Name,
+                    server.Host.Trim()))
+                .ToList();
+            if (mapped.Count > 0)
+            {
+                return mapped;
+            }
+        }
+
+        return DefaultGameServers;
+    }
+
+    private void HomeTab_Click(object sender, RoutedEventArgs e) => SetActiveTab(account: false);
+    private void AccountTab_Click(object sender, RoutedEventArgs e) => SetActiveTab(account: true);
+
+    private bool _accountTabActive;
+
+    // Цвет берём из активной темы (DynamicResource-ключи заполняет LauncherThemeCatalog), а не хардкодим,
+    // иначе подсветка не совпадает с выбранной темой.
+    private Media.Brush ResolveThemeBrush(string key, Media.Brush fallback) =>
+        TryFindResource(key) as Media.Brush ?? fallback;
+
+    // Переключение вкладок «Главная» / «Личный кабинет»: показываем нужную страницу и подсвечиваем активную.
+    private void SetActiveTab(bool account)
+    {
+        if (HomePage is null || AccountPage is null)
+        {
+            return;
+        }
+
+        _accountTabActive = account;
+        HomePage.Visibility = account ? Visibility.Collapsed : Visibility.Visible;
+        AccountPage.Visibility = account ? Visibility.Visible : Visibility.Collapsed;
+
+        var activeBg = ResolveThemeBrush("SoftButtonBackgroundBrush", ModpackSelectedBg);
+        var activeBorder = ResolveThemeBrush("AccentBrush", ModpackSelectedBorder);
+        AccountTabButton.Background = account ? activeBg : Media.Brushes.Transparent;
+        AccountTabButton.BorderBrush = account ? activeBorder : Media.Brushes.Transparent;
+        HomeTabButton.Background = account ? Media.Brushes.Transparent : activeBg;
+        HomeTabButton.BorderBrush = account ? Media.Brushes.Transparent : activeBorder;
+
+        // Кабинет всегда открывается с профиля, а не с середины списка достижений. ScrollToTop
+        // сразу после смены Visibility не срабатывает (у ScrollViewer ещё нет раскладки), поэтому
+        // откладываем до готовности layout.
+        if (account)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => AccountScrollViewer?.ScrollToTop());
+            // Подтягиваем достижения и скин с сайта (внутри троттлинг / проверка смены ника).
+            _ = RefreshSiteAchievementsAsync();
+            _ = RefreshSkinAsync();
+        }
+
+        // Мягкое появление страницы вместо мгновенной подмены.
+        FadeIn(account ? AccountPage : HomePage);
+    }
+
+    // Шаг колеса в кабинете. По умолчанию WPF прокручивает три «строки» (~50px) за щелчок, и на
+    // длинной странице с ачивками это ощущается рывками — берём шаг помельче, как в настройках.
+    private const double AccountWheelScrollStep = 34d;
+
+    // ================= НИК ИГРОКА =================
+    // 44 игрока из 161 в саппорт-логах заходили под дефолтным «Player», и 29 из них так и не
+    // исправили: поле ника жило только в кабинете, на главной его не было видно. Поэтому ник
+    // показан внизу главного экрана, а запуск с дефолтным/некорректным ником блокируется.
+
+    private const string DefaultUsername = "Player";
+
+    /// <summary>
+    /// Проверка ника нужна ровно для одного: не пустить на сервер заглушку «Player» (под ней играли
+    /// 44 игрока из 161). Поэтому она не должна быть строже, чем сам сервер: точка и дефис в никах
+    /// встречаются у реальных игроков (например Dr.J.Mengele — 112 часов на двух серверах), и запрет
+    /// на них означал бы, что человек вообще не может запустить игру. Кириллицу не пускаем: игроки с
+    /// такими никами на серверах не появляются, то есть это как раз неверно введённый ник.
+    /// </summary>
+    // Правила ника переехали в ядро — их использует и Avalonia-версия.
+    private static bool IsUsernameValid(string? username) => UsernameRules.IsValid(username);
+
+    private void UpdateUsernameIndicator()
+    {
+        if (UsernameIndicatorTextBlock is null || UsernameTextBox is null)
+        {
+            return;
+        }
+
+        var username = UsernameTextBox.Text?.Trim() ?? string.Empty;
+        var valid = IsUsernameValid(username);
+
+        UsernameIndicatorTextBlock.Text = valid ? $"Ник: {username}" : "Ник не выбран";
+        UsernameIndicatorIcon.Text = valid ? "👤" : "⚠";
+        UsernameIndicatorTextBlock.SetResourceReference(
+            System.Windows.Controls.TextBlock.ForegroundProperty,
+            valid ? "TextBrush" : "AccentBrush");
+
+        if (UsernameHintTextBlock is not null)
+        {
+            UsernameHintTextBlock.Text = username.Length == 0
+                ? "Введи ник — под ним тебя увидят на сервере."
+                : valid
+                    ? "3–16 символов: латиница, цифры, подчёркивание, тире, точка"
+                    : username.Equals(DefaultUsername, StringComparison.OrdinalIgnoreCase)
+                        ? "«Player» — это заглушка. Впиши свой ник, иначе на сервере будет каша."
+                        : "Не подходит: нужно 3–16 символов — латиница, цифры, подчёркивание, тире, точка";
+            UsernameHintTextBlock.SetResourceReference(
+                System.Windows.Controls.TextBlock.ForegroundProperty,
+                valid ? "MutedBrush" : "AccentBrush");
+        }
+    }
+
+    private void UsernameIndicator_Click(object sender, RoutedEventArgs e) => FocusUsernameField();
+
+    // ================= СКИН ИГРОКА =================
+    // Тот же API, что у кабинета на сайте: GET публичный, загрузка требует пароль от аккаунта.
+    // Пароль запрашивается в окне смены скина и нигде не сохраняется.
+
+    private byte[]? _currentSkin;
+    private string _currentSkinModel = "classic";
+    private string _lastSkinNickname = string.Empty;
+
+    private async Task RefreshSkinAsync(bool force = false)
+    {
+        var nickname = GetUsername();
+        if (!IsUsernameValid(nickname))
+        {
+            ApplySkinToUi(null);
+            return;
+        }
+
+        if (!force && nickname.Equals(_lastSkinNickname, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            using var cts = CreateLightRequestCts();
+            var info = await _skinClient.GetInfoAsync(nickname, cts.Token);
+            _currentSkinModel = info?.Model ?? "classic";
+            var skin = info is null || info.HasSkin ? await _skinClient.GetSkinAsync(nickname, cts.Token) : null;
+
+            _currentSkin = skin;
+            _lastSkinNickname = nickname;
+            ApplySkinToUi(skin);
+            AppendLog(skin is null ? "Skin: not set." : $"Skin loaded ({_currentSkinModel}, {skin.Length} bytes).");
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Skin load failed: {exception.Message}");
+        }
+    }
+
+    private void ApplySkinToUi(byte[]? skin)
+    {
+        if (SkinPreviewImage is null)
+        {
+            return;
+        }
+
+        var body = skin is null ? null : SkinRenderer.RenderBody(skin, _currentSkinModel == "slim");
+        SkinPreviewImage.Source = body;
+        SkinEmptyTextBlock.Visibility = body is null ? Visibility.Visible : Visibility.Collapsed;
+
+        var head = skin is null ? null : SkinRenderer.RenderHead(skin);
+        if (head is null)
+        {
+            ProfileAvatarSkinEllipse.Visibility = Visibility.Collapsed;
+            ProfileAvatarTextBlock.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ProfileAvatarBrush.ImageSource = head;
+            ProfileAvatarSkinEllipse.Visibility = Visibility.Visible;
+            ProfileAvatarTextBlock.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ChangeSkinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!EnsureUsernameSelected())
+        {
+            return;
+        }
+
+        var window = new SkinWindow(_skinClient, GetUsername(), _currentSkin, _currentSkinModel, _userSettings.ThemeId)
+        {
+            Owner = this
+        };
+
+        window.ShowDialog();
+        if (window.SkinChanged)
+        {
+            _ = RunBackgroundAsync(() => RefreshSkinAsync(force: true));
+            _ = TrackTelemetryAsync("skin_changed");
+        }
+    }
+
+    // ================= ДОПОЛНИТЕЛЬНЫЕ МОДЫ =================
+    // Ставятся только моды из каталога, одобренного администрацией (проверка SHA-256). Файлы
+    // хранятся в .launcher/optional-mods (переживает обновление) и раскладываются в mods/ после
+    // каждой установки — иначе их стирала бы очистка пак-папок при апдейте.
+
+    private OptionalModsCatalog? _optionalModsCatalog;
+
+    private async Task RefreshOptionalModsCatalogAsync()
+    {
+        _optionalModsCatalog = null;
+        if (OptionalModsButton is not null)
+        {
+            OptionalModsButton.Visibility = Visibility.Collapsed;
+        }
+
+        var catalogUrl = _modpackManifest?.OptionalModsUrl;
+        if (string.IsNullOrWhiteSpace(catalogUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            using var cts = CreateLightRequestCts();
+            // Локальный путь оставляем как есть: ResolveUri превратил бы его в file:// URI,
+            // который HttpClient не умеет. Относительные адреса по-прежнему достраиваем от манифеста.
+            var expanded = Environment.ExpandEnvironmentVariables(catalogUrl);
+            var resolvedUrl = File.Exists(expanded)
+                ? Path.GetFullPath(expanded)
+                : _modpackManifest!.ResolveUri(catalogUrl).ToString();
+            var catalog = await _optionalModsService.GetCatalogAsync(resolvedUrl, cts.Token);
+            if (catalog is null || catalog.Mods.Count == 0)
+            {
+                AppendLog("Optional mods catalog is empty.");
+                return;
+            }
+
+            _optionalModsCatalog = catalog;
+            if (OptionalModsButton is not null)
+            {
+                OptionalModsButton.Visibility = Visibility.Visible;
+            }
+
+            AppendLog($"Optional mods available: {catalog.Mods.Count}");
+
+            ApplyDefaultOptionalMods(catalog);
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Optional mods catalog failed: {exception.Message}");
+        }
+    }
+
+    // Моды с defaultOn включаем один раз — дальше уважаем выбор игрока, даже если он их снял.
+    private void ApplyDefaultOptionalMods(OptionalModsCatalog catalog)
+    {
+        var modpackId = GetOptionalModsKey();
+        if (_userSettings.OptionalModsInitialized.Contains(modpackId, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var defaults = catalog.Mods.Where(mod => mod.DefaultOn).Select(mod => mod.Id).ToList();
+        _userSettings.OptionalModsInitialized.Add(modpackId);
+        if (defaults.Count > 0)
+        {
+            _userSettings.OptionalMods[modpackId] = defaults;
+        }
+
+        SaveUserSettings();
+    }
+
+    private string GetOptionalModsKey() =>
+        !string.IsNullOrWhiteSpace(_selectedModpackId) ? _selectedModpackId : _modpackManifest?.Modpack.Id ?? "default";
+
+    private IReadOnlyList<string> GetSelectedOptionalMods() =>
+        _userSettings.OptionalMods.TryGetValue(GetOptionalModsKey(), out var selected) ? selected : [];
+
+    private async void OptionalModsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_optionalModsCatalog is null || _configuration is null)
+        {
+            return;
+        }
+
+        var window = new OptionalModsWindow(
+            _optionalModsService,
+            _optionalModsCatalog,
+            GetSelectedOptionalMods().ToList(),
+            GetEffectiveInstallRoot(),
+            _modpackManifest?.Modpack.Name ?? _configuration.LauncherName,
+            _userSettings.ThemeId)
+        {
+            Owner = this
+        };
+
+        if (window.ShowDialog() == true)
+        {
+            _userSettings.OptionalMods[GetOptionalModsKey()] = window.SelectedIds.ToList();
+            SaveUserSettings();
+            SetStatus($"Дополнительные моды обновлены: включено {window.SelectedIds.Count}");
+            AppendLog($"Optional mods selected: {string.Join(", ", window.SelectedIds)}");
+            _ = TrackTelemetryAsync("optional_mods_changed", new Dictionary<string, object?>
+            {
+                ["count"] = window.SelectedIds.Count,
+                ["modpackId"] = GetOptionalModsKey()
+            });
+        }
+    }
+
+    /// <summary>
+    /// Возвращает выбранные моды в mods/ после установки/обновления сборки (очистка пак-папок их
+    /// сносит). Ошибки не должны мешать запуску — логируем и идём дальше.
+    /// </summary>
+    private async Task SyncOptionalModsAsync()
+    {
+        if (_optionalModsCatalog is null)
+        {
+            return;
+        }
+
+        var selected = GetSelectedOptionalMods();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var root = GetEffectiveInstallRoot();
+            var result = await _optionalModsService.SyncAsync(root, _optionalModsCatalog, selected, null, CancellationToken.None);
+            AppendLog($"Optional mods synced: {result.Installed} installed, {result.Removed} removed.");
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Optional mods sync failed: {exception.Message}");
+            SetStatus($"Не удалось добавить дополнительные моды: {exception.Message}");
+        }
+    }
+
+    private void FocusUsernameField()
+    {
+        SetActiveTab(account: true);
+        AccountScrollViewer?.ScrollToTop();
+        UsernameTextBox.Focus();
+        UsernameTextBox.SelectAll();
+    }
+
+    /// <summary>
+    /// Пускать в игру только с осмысленным ником. Возвращает false, если запуск нужно прервать —
+    /// игрока при этом перекидывает на поле ника с понятным объяснением.
+    /// </summary>
+    private bool EnsureUsernameSelected()
+    {
+        if (IsUsernameValid(UsernameTextBox.Text))
+        {
+            return true;
+        }
+
+        FocusUsernameField();
+        UpdateUsernameIndicator();
+        SetStatus("Сначала выбери ник — под ним тебя увидят на сервере");
+        AppendLog("Launch blocked: username is not set.");
+        return false;
+    }
+
+    private void AccountScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        var deltaSteps = e.Delta / 120d;
+        var offset = AccountScrollViewer.VerticalOffset - deltaSteps * AccountWheelScrollStep;
+        AccountScrollViewer.ScrollToVerticalOffset(Math.Clamp(offset, 0, AccountScrollViewer.ScrollableHeight));
+    }
+
+    private static void FadeIn(UIElement element)
+    {
+        element.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
+
+    // ================= ПРОФИЛЬ ИГРОКА И ДОСТИЖЕНИЯ =================
+
+    /// <summary>
+    /// Записывает завершённую сессию в профиль, проверяет ачивки и обновляет вкладку.
+    /// Вызывается из фонового мониторинга процесса игры, поэтому UI трогаем через Dispatcher.
+    /// </summary>
+    private void RecordPlaySession(TimeSpan runtime, bool crashed, DateTime startedAtLocal)
+    {
+        if (_configuration is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var previousCrashed = _playerProfile.LastSessionCrashed;
+            var modpackId = !string.IsNullOrWhiteSpace(_selectedModpackId)
+                ? _selectedModpackId
+                : _modpackManifest?.Modpack.Id ?? "default";
+            var modpackName = _modpackManifest?.Modpack.Name ?? modpackId;
+
+            _playerProfile.ClientId = _userSettings.ClientId;
+            _playerProfile.RecordSession(modpackId, modpackName, runtime, crashed, startedAtLocal);
+            _playerProfile.Save(_configuration.GetPlayerProfilePath());
+
+            Dispatcher.Invoke(() =>
+            {
+                RefreshProfileUi();
+                // После сессии статистика на сервере изменилась — тянем достижения заново и,
+                // если что-то открылось, показываем тост.
+                _ = RefreshSiteAchievementsAsync(force: true);
+            });
+        }
+        catch (Exception exception)
+        {
+            Dispatcher.Invoke(() => AppendLog($"Profile update failed: {exception.Message}"));
+        }
+    }
+
+    private void RefreshProfileUi()
+    {
+        UpdateProfileAvatar();
+        RefreshProfileSummary();
+        RefreshProfileStats();
+        RefreshProfileModpacks();
+        RefreshAchievements();
+    }
+
+    private void UpdateProfileAvatar()
+    {
+        if (ProfileAvatarTextBlock is null)
+        {
+            return;
+        }
+
+        var name = UsernameTextBox?.Text?.Trim();
+        ProfileAvatarTextBlock.Text = string.IsNullOrEmpty(name)
+            ? "?"
+            : char.ToUpperInvariant(name[0]).ToString();
+    }
+
+    private void RefreshProfileSummary()
+    {
+        if (ProfileSummaryTextBlock is null)
+        {
+            return;
+        }
+
+        var parts = new List<string>();
+
+        // Сначала то, что пришло с сайта: уровень, XP до следующего и место по времени.
+        if (_siteLevel is not null)
+        {
+            parts.Add($"{_siteLevel.Title} · ур. {_siteLevel.Level}");
+            parts.Add($"до {_siteLevel.Level + 1} ур.: {_siteLevel.Need - _siteLevel.Into} XP");
+        }
+
+        if (_playerProfile.TotalLaunches == 0 && _siteLevel is null)
+        {
+            ProfileSummaryTextBlock.Text = IsUsernameValid(UsernameTextBox?.Text)
+                ? "Статистика появится после первого запуска игры."
+                : "Укажи ник — и здесь появятся твои достижения с сайта.";
+            return;
+        }
+        var favorite = _playerProfile.FavoriteModpackName;
+        if (!string.IsNullOrWhiteSpace(favorite))
+        {
+            parts.Add($"Любимая сборка: {favorite}");
+        }
+
+        if (_playerProfile.FirstLaunchUtc is { } first)
+        {
+            parts.Add($"С нами с {first.ToLocalTime():dd.MM.yyyy}");
+        }
+
+        if (_playerProfile.LongestSessionSeconds > 0)
+        {
+            parts.Add($"Самая долгая сессия: {FormatPlaytime(_playerProfile.LongestSessionSeconds)}");
+        }
+
+        ProfileSummaryTextBlock.Text = string.Join("  ·  ", parts);
+    }
+
+    private void RefreshProfileStats()
+    {
+        if (ProfileStatsPanel is null)
+        {
+            return;
+        }
+
+        var tiles = new List<ProfileStatTile>();
+
+        // Первыми — данные с сайта: уровень и достижения там же, что в кабинете.
+        if (_siteLevel is not null)
+        {
+            tiles.Add(new($"ур. {_siteLevel.Level}", _siteLevel.Title));
+            tiles.Add(new($"{_siteAchievements.Count(a => a.Earned)} / {_siteAchievements.Count}", "достижений"));
+            tiles.Add(new(_siteLevel.TotalXp.ToString("N0"), "XP всего"));
+        }
+
+        tiles.Add(new(FormatPlaytime(_playerProfile.TotalPlaySeconds), "в игре через лаунчер"));
+        tiles.Add(new(_playerProfile.TotalLaunches.ToString(), "запусков игры"));
+        tiles.Add(new(FormatDays(_playerProfile.GetLiveStreakDays()), "дней подряд"));
+        tiles.Add(new(_playerProfile.DistinctModpackCount.ToString(), "сборок опробовано"));
+
+        ProfileStatsPanel.ItemsSource = tiles;
+    }
+
+    private void RefreshProfileModpacks()
+    {
+        if (ProfileModpackPanel is null || ProfileModpackHeader is null)
+        {
+            return;
+        }
+
+        var played = _playerProfile.Modpacks
+            .Where(pair => pair.Value.PlaySeconds > 0)
+            .OrderByDescending(pair => pair.Value.PlaySeconds)
+            .ToList();
+
+        if (played.Count == 0)
+        {
+            ProfileModpackHeader.Visibility = Visibility.Collapsed;
+            ProfileModpackPanel.ItemsSource = null;
+            return;
+        }
+
+        var max = played[0].Value.PlaySeconds;
+        ProfileModpackHeader.Visibility = Visibility.Visible;
+        ProfileModpackPanel.ItemsSource = played
+            .Select(pair => new ProfileModpackRow(
+                string.IsNullOrWhiteSpace(pair.Value.Name) ? pair.Key : pair.Value.Name,
+                FormatPlaytime(pair.Value.PlaySeconds),
+                max <= 0 ? 0 : pair.Value.PlaySeconds * 100.0 / max))
+            .ToList();
+    }
+
+    // Достижения берём с сайта: там они считаются из игровой статистики (часы, убийства, блоки),
+    // и лаунчер показывает ровно то же, что кабинет. Пока данных нет — панель пустая с подсказкой.
+    private IReadOnlyList<SiteAchievement> _siteAchievements = [];
+
+    private void RefreshAchievements()
+    {
+        if (AchievementsPanel is null || AchievementsCounterTextBlock is null)
+        {
+            return;
+        }
+
+        var accent = ResolveThemeBrush("AccentBrush", Media.Brushes.Goldenrod);
+        var muted = ResolveThemeBrush("MutedBrush", Media.Brushes.Gray);
+        var stroke = ResolveThemeBrush("StrokeBrush", Media.Brushes.DimGray);
+
+        var cards = _siteAchievements
+            .Select((achievement, index) => new AchievementCard(
+                achievement.Icon,
+                achievement.Name,
+                achievement.Description,
+                achievement.Earned
+                    ? $"Получено · +{achievement.Xp} XP"
+                    : FormatAchievementProgress(achievement),
+                achievement.Progress * 100,
+                achievement.Earned ? 1.0 : 0.55,
+                achievement.Earned ? accent : muted,
+                achievement.Earned ? accent : stroke,
+                $"{achievement.Name}: {achievement.Description} (+{achievement.Xp} XP)",
+                achievement.Earned,
+                index))
+            // Полученные — вперёд, дальше по близости к цели: видно, что вот-вот откроется.
+            .OrderByDescending(card => card.Unlocked)
+            .ThenByDescending(card => card.Unlocked ? 0 : card.Percent)
+            .ThenBy(card => card.Order)
+            .ToList();
+
+        AchievementsPanel.ItemsSource = cards;
+        AchievementsCounterTextBlock.Text = cards.Count == 0
+            ? "нет данных"
+            : $"{cards.Count(card => card.Unlocked)} из {cards.Count}";
+    }
+
+    private static string FormatAchievementProgress(SiteAchievement achievement)
+    {
+        if (achievement.Group == "special")
+        {
+            return $"Не получено · +{achievement.Xp} XP";
+        }
+
+        var unit = string.IsNullOrEmpty(achievement.Unit) ? string.Empty : " " + achievement.Unit;
+        return $"{FormatMetric(achievement.Current)} / {FormatMetric(achievement.Target)}{unit}";
+    }
+
+    private static string FormatMetric(double value) =>
+        Math.Abs(value % 1) < 0.05 ? ((long)Math.Round(value)).ToString("N0") : value.ToString("0.#");
+
+    /// <summary>
+    /// Тянет достижения игрока с сайта и перерисовывает вкладку. Троттлинг на 5 минут, чтобы
+    /// переключение вкладок не долбило API; force — после игровой сессии, когда статистика точно
+    /// изменилась.
+    /// </summary>
+    private async Task RefreshSiteAchievementsAsync(bool force = false)
+    {
+        var nickname = GetUsername();
+        if (!IsUsernameValid(nickname))
+        {
+            _siteAchievements = [];
+            _siteLevel = null;
+            RefreshAchievements();
+            return;
+        }
+
+        if (!force && DateTime.UtcNow - _lastSiteSyncUtc < TimeSpan.FromMinutes(5))
+        {
+            return;
+        }
+
+        try
+        {
+            using var cts = CreateLightRequestCts();
+            var response = await _playerStatsClient.GetAsync(nickname, cts.Token);
+            if (response is null || !response.Found)
+            {
+                AppendLog($"Site achievements: player '{nickname}' not found.");
+                _siteAchievements = [];
+                _siteLevel = null;
+                RefreshAchievements();
+                RefreshProfileStats();
+                RefreshProfileSummary();
+                return;
+            }
+
+            _siteAchievements = SiteAchievementEngine.Build(response);
+            _siteLevel = SiteAchievementEngine.BuildLevel(_siteAchievements);
+            _lastSiteSyncUtc = DateTime.UtcNow;
+
+            var unlocked = TrackNewSiteAchievements();
+            RefreshAchievements();
+            RefreshProfileStats();
+            RefreshProfileSummary();
+            AppendLog($"Site achievements synced: {_siteAchievements.Count(a => a.Earned)}/{_siteAchievements.Count}, level {_siteLevel.Level}.");
+
+            foreach (var achievement in unlocked.Take(3))
+            {
+                EnqueueAchievementToast(new AchievementToastContent(achievement.Icon, achievement.Name, $"{achievement.Description} · +{achievement.Xp} XP"));
+            }
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Site achievements sync failed: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Сравнивает полученные достижения с тем, что лаунчер уже видел, и возвращает новые.
+    /// Первая синхронизация проходит молча — иначе игрок получил бы полсотни тостов подряд.
+    /// </summary>
+    private IReadOnlyList<SiteAchievement> TrackNewSiteAchievements()
+    {
+        var earned = _siteAchievements.Where(achievement => achievement.Earned).ToList();
+        var firstSync = !_playerProfile.SiteSynced;
+        var fresh = earned
+            .Where(achievement => !_playerProfile.SiteAchievements.ContainsKey(achievement.Id))
+            .ToList();
+
+        foreach (var achievement in earned)
+        {
+            _playerProfile.SiteAchievements.TryAdd(achievement.Id, DateTime.UtcNow);
+        }
+
+        _playerProfile.SiteSynced = true;
+        _playerProfile.ClientId = _userSettings.ClientId;
+        TrySaveProfile();
+
+        return firstSync ? [] : fresh;
+    }
+
+    private void TrySaveProfile()
+    {
+        try
+        {
+            if (_configuration is not null)
+            {
+                _playerProfile.Save(_configuration.GetPlayerProfilePath());
+            }
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Profile save failed: {exception.Message}");
+        }
+    }
+
+    private void EnqueueAchievementToast(AchievementToastContent content)
+    {
+        _achievementToastQueue.Enqueue(content);
+        if (!_achievementToastRunning)
+        {
+            _ = ShowAchievementToastsAsync();
+        }
+    }
+
+    /// <summary>Показывает накопленные ачивки по очереди, чтобы тосты не наезжали друг на друга.</summary>
+    private async Task ShowAchievementToastsAsync()
+    {
+        if (AchievementToast is null)
+        {
+            return;
+        }
+
+        _achievementToastRunning = true;
+        try
+        {
+            while (_achievementToastQueue.Count > 0)
+            {
+                var content = _achievementToastQueue.Dequeue();
+                AchievementToastIcon.Text = content.Icon;
+                AchievementToastTitle.Text = content.Title;
+                AchievementToastDescription.Text = content.Description;
+
+                AchievementToast.Visibility = Visibility.Visible;
+                _soundService.PlayAchievement();
+                AnimateToast(show: true);
+                await Task.Delay(TimeSpan.FromSeconds(4.5));
+                AnimateToast(show: false);
+                await Task.Delay(TimeSpan.FromMilliseconds(320));
+                AchievementToast.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception exception)
+        {
+            AppendLog($"Achievement toast failed: {exception.Message}");
+        }
+        finally
+        {
+            _achievementToastRunning = false;
+        }
+    }
+
+    private void AnimateToast(bool show)
+    {
+        var duration = TimeSpan.FromMilliseconds(show ? 280 : 300);
+        var ease = new CubicEase { EasingMode = show ? EasingMode.EaseOut : EasingMode.EaseIn };
+
+        AchievementToast.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            To = show ? 1 : 0,
+            Duration = duration,
+            EasingFunction = ease
+        });
+
+        AchievementToastTransform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation
+        {
+            To = show ? 0 : 18,
+            Duration = duration,
+            EasingFunction = ease
+        });
+    }
+
+    /// <summary>Короткое «нажатие» главной кнопки — тактильная отдача на клик.</summary>
+    private void AnimatePlayButtonPress()
+    {
+        if (PlayButtonScale is null)
+        {
+            return;
+        }
+
+        var animation = new DoubleAnimation
+        {
+            To = 0.96,
+            Duration = TimeSpan.FromMilliseconds(90),
+            AutoReverse = true,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        PlayButtonScale.BeginAnimation(ScaleTransform.ScaleXProperty, animation);
+        PlayButtonScale.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
+    }
+
+    private static string FormatPlaytime(long seconds)
+    {
+        if (seconds < 60)
+        {
+            return "0 мин";
+        }
+
+        if (seconds < 3600)
+        {
+            return $"{seconds / 60} мин";
+        }
+
+        var hours = seconds / 3600;
+        var minutes = seconds % 3600 / 60;
+        return minutes == 0 ? $"{hours} ч" : $"{hours} ч {minutes} мин";
+    }
+
+    private static string FormatDays(int days) => days.ToString();
+
+    public sealed record AchievementToastContent(string Icon, string Title, string Description);
+
+    public sealed record ProfileStatTile(string Value, string Caption);
+
+    public sealed record ProfileModpackRow(string Name, string TimeText, double Percent);
+
+    public sealed record AchievementCard(
+        string Icon,
+        string Title,
+        string Description,
+        string ProgressText,
+        double Percent,
+        double CardOpacity,
+        Media.Brush TitleBrush,
+        Media.Brush BorderBrushColor,
+        string Tooltip,
+        bool Unlocked,
+        int Order);
 
     private static readonly Media.Brush ServerOnlineBrush = CreateFrozenBrush(0x3F, 0xB9, 0x50);
     private static readonly Media.Brush ServerOfflineBrush = CreateFrozenBrush(0x6E, 0x76, 0x81);
 
-    private async void ServerStatsTimer_Tick(object? sender, EventArgs e) =>
-        await RunSafeAsync(RefreshServerStatsAsync);
+    private void ServerStatsTimer_Tick(object? sender, EventArgs e) => RefreshServerStatsInBackground();
 
-    private async Task RefreshServerStatsAsync()
+    private int _serverRefreshGeneration;
+
+    // Обновляет статус серверов В ФОНЕ: переключение сборки не должно висеть на пинге серверов
+    // (особенно когда сервер недоступен — пинг ждёт таймаут). Устаревший результат отбрасывается по
+    // generation, чтобы при быстром переключении не показать карточки предыдущей сборки.
+    private void RefreshServerStatsInBackground(bool showLoading = false)
     {
-        var items = await Task.WhenAll(GameServers.Select(GetServerStatusAsync));
-        ServerListPanel.ItemsSource = items;
-        UpdateServerSummary(items);
-        if (!_serverStatsTimer.IsEnabled)
+        var servers = GetGameServers();
+        var generation = ++_serverRefreshGeneration;
+        if (showLoading)
         {
-            _serverStatsTimer.Start();
+            ServerListPanel.ItemsSource = null;
+            ServerSubtitleTextBlock.Text = "Получаем статус серверов…";
         }
+
+        _ = RunBackgroundAsync(async () =>
+        {
+            var items = await Task.WhenAll(servers.Select(GetServerStatusAsync));
+            if (generation != _serverRefreshGeneration)
+            {
+                return; // пользователь уже переключил сборку — не перетираем актуальные карточки
+            }
+
+            ServerListPanel.ItemsSource = items;
+            UpdateServerSummary(items);
+            if (!_serverStatsTimer.IsEnabled)
+            {
+                _serverStatsTimer.Start();
+            }
+        });
     }
 
     private async Task<ServerStatusItem> GetServerStatusAsync(ServerDefinition server)
     {
         try
         {
-            var stats = await _serverStatsClient.GetStatsAsync(ServerStatsUrl, server.Host);
-            return BuildServerStatusItem(server, stats);
+            // Пингуем сервер напрямую (Minecraft Server List Ping) — реальный онлайн каждого сервера,
+            // без бэкенда/мода. SRV резолвится внутри пингера.
+            using var cts = CreateLightRequestCts();
+            var ping = await _serverPinger.PingAsync(server.Host, cts.Token);
+            return BuildServerStatusItem(server, ping);
         }
         catch (Exception exception)
         {
-            AppendLog($"Server stats load failed ({server.Host}): {exception.Message}");
+            AppendLog($"Server ping failed ({server.Host}): {exception.Message}");
             return BuildServerStatusItem(server, null);
         }
     }
 
-    private static ServerStatusItem BuildServerStatusItem(ServerDefinition server, ServerStats? stats)
+    private static ServerStatusItem BuildServerStatusItem(ServerDefinition server, MinecraftPingResult? ping)
     {
-        var available = stats is { Success: true };
-        var online = stats is { Success: true, Online: true };
-
-        if (!available)
+        // Сервер ответил на пинг = онлайн. Не ответил = недоступен.
+        if (ping is null)
         {
-            return new ServerStatusItem(server.DisplayName, "Не отвечает", "Недоступен", "—", "", ServerOfflineBrush, false, 0);
+            return new ServerStatusItem(server.DisplayName, "Не отвечает", "Недоступен", "—", "", ServerOfflineBrush, false, 0, server.Host);
         }
 
-        if (!online)
-        {
-            return new ServerStatusItem(server.DisplayName, server.Host, "Оффлайн", "0", "игроков", ServerOfflineBrush, false, 0);
-        }
-
-        var detail = stats!.Tps > 0 ? $"{server.Host} · TPS {stats.Tps:0.#}" : server.Host;
-        return new ServerStatusItem(server.DisplayName, detail, "Онлайн", stats.Players.ToString(), PlayersCaption(stats.Players), ServerOnlineBrush, true, stats.Players);
+        var detail = ping.PlayersMax > 0 ? $"{server.Host} · {ping.PlayersOnline}/{ping.PlayersMax}" : server.Host;
+        return new ServerStatusItem(server.DisplayName, detail, "Онлайн", ping.PlayersOnline.ToString(), PlayersCaption(ping.PlayersOnline), ServerOnlineBrush, true, ping.PlayersOnline, server.Host);
     }
 
     private void UpdateServerSummary(IReadOnlyCollection<ServerStatusItem> items)
@@ -1368,33 +2536,14 @@ public partial class MainWindow : Window, IDisposable
         string PlayersCaption,
         Media.Brush StatusBrush,
         bool IsOnline,
-        int OnlinePlayers);
+        int OnlinePlayers,
+        string Host);
 
-    private string ResolveNewsUrl(ModpackManifest manifest)
-    {
-        var configuredUrl = manifest.Launcher.NewsUrl;
-        if (!string.IsNullOrWhiteSpace(configuredUrl))
-        {
-            return manifest.ResolveUri(configuredUrl).ToString();
-        }
+    // Единый источник новостей: новости общие для ВСЕХ сборок, поэтому newsUrl из манифеста конкретной
+    // сборки не используется (иначе у сборок без newsUrl был бы 404, а у разных — разные новости).
+    private const string CommonNewsUrl = "https://bl-modern.ru/api/rss.php";
 
-        if (manifest.SourceUri is null)
-        {
-            return string.Empty;
-        }
-
-        if (manifest.SourceUri.IsFile)
-        {
-            return Path.Combine(Path.GetDirectoryName(manifest.SourceUri.LocalPath) ?? AppContext.BaseDirectory, "news.json");
-        }
-
-        if (manifest.SourceUri.Host.EndsWith("bl-modern.ru", StringComparison.OrdinalIgnoreCase))
-        {
-            return "https://bl-modern.ru/api/rss.php";
-        }
-
-        return new Uri(manifest.SourceUri, "news.php").ToString();
-    }
+    private string ResolveNewsUrl(ModpackManifest manifest) => CommonNewsUrl;
 
     private void ShowNewsItem(NewsItem newsItem, string newsFeedUrl)
     {
@@ -1402,14 +2551,23 @@ public partial class MainWindow : Window, IDisposable
         NewsDateTextBlock.Text = newsItem.CreatedAt == default
             ? string.Empty
             : newsItem.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
-        NewsDescriptionTextBlock.Text = string.IsNullOrWhiteSpace(newsItem.Description)
-            ? "Описание новости не заполнено."
-            : newsItem.Description;
+        // Сайт присылает описание в Markdown — разбираем его, а картинку из разметки отдаём
+        // штатному блоку изображения, если своей (enclosure/image_url) у новости нет.
+        var body = MarkdownRenderer.ExtractFirstImage(newsItem.Description ?? string.Empty, out var markdownImage);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            SetNewsPlainText("Описание новости не заполнено.");
+        }
+        else
+        {
+            SetNewsMarkdown(body);
+        }
 
         _currentNewsUrl = ResolveOptionalNewsLink(newsItem.Url, newsFeedUrl);
         OpenNewsButton.Visibility = string.IsNullOrWhiteSpace(_currentNewsUrl) ? Visibility.Collapsed : Visibility.Visible;
 
-        var imageUrl = ResolveOptionalNewsLink(newsItem.ImageUrl, newsFeedUrl);
+        var imageSource = string.IsNullOrWhiteSpace(newsItem.ImageUrl) ? markdownImage : newsItem.ImageUrl;
+        var imageUrl = ResolveOptionalNewsLink(imageSource, newsFeedUrl);
         if (string.IsNullOrWhiteSpace(imageUrl))
         {
             NewsImageBorder.Visibility = Visibility.Collapsed;
@@ -1440,7 +2598,39 @@ public partial class MainWindow : Window, IDisposable
         OpenNewsButton.Visibility = Visibility.Collapsed;
         NewsTitleTextBlock.Text = "Новости";
         NewsDateTextBlock.Text = string.Empty;
-        NewsDescriptionTextBlock.Text = message;
+        SetNewsPlainText(message);
+    }
+
+    /// <summary>Служебное сообщение в блоке новостей (ошибка, «загружается») — без разметки.</summary>
+    private void SetNewsPlainText(string message)
+    {
+        NewsDescriptionPanel.Children.Clear();
+        var text = new System.Windows.Controls.TextBlock
+        {
+            Text = message,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap
+        };
+        text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, "MutedBrush");
+        NewsDescriptionPanel.Children.Add(text);
+    }
+
+    private void SetNewsMarkdown(string markdown)
+    {
+        NewsDescriptionPanel.Children.Clear();
+        try
+        {
+            foreach (var element in MarkdownRenderer.Render(markdown, OpenExternalUrl))
+            {
+                NewsDescriptionPanel.Children.Add(element);
+            }
+        }
+        catch (Exception exception)
+        {
+            // Кривая разметка не должна ломать окно: показываем текст как есть.
+            AppendLog($"News markdown render failed: {exception.Message}");
+            SetNewsPlainText(markdown);
+        }
     }
 
     private static string ResolveOptionalNewsLink(string value, string baseUrl)
@@ -1543,7 +2733,9 @@ public partial class MainWindow : Window, IDisposable
             await exitTask;
             UpdateDiscordPresence(DiscordIdleDetails, DiscordIdleState);
             var runtime = DateTime.UtcNow - startedAt;
-            var analysis = CrashAnalyzerService.Analyze(installRoot, process.ExitCode);
+            RecordPlaySession(runtime, crashed: process.ExitCode != 0, startedAtLocal: startedAt.ToLocalTime());
+            // Analyze читает логи синхронно — уводим с UI-потока, чтобы не подвесить окно.
+            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
 
             _ = TrackTelemetryAsync("game_session_ended", new Dictionary<string, object?>
             {
@@ -1563,12 +2755,26 @@ public partial class MainWindow : Window, IDisposable
                     {
                         ["launchAttemptId"] = launchAttemptId,
                         ["exitCode"] = process.ExitCode,
+                        ["exitCodeHex"] = analysis.ExitCodeHex,
+                        ["exitCodeDescription"] = analysis.ExitCodeDescription,
                         ["runtimeSeconds"] = (int)runtime.TotalSeconds,
                         ["crashCategory"] = analysis.Category,
                         ["summary"] = analysis.Summary,
                         ["signature"] = analysis.Signature,
                         ["evidence"] = analysis.Evidence,
-                        ["hasCrashReport"] = analysis.HasCrashReport
+                        ["hasCrashReport"] = analysis.HasCrashReport,
+                        ["hasHsErr"] = analysis.HasHsErr,
+                        ["logTail"] = analysis.LogTail
+                    });
+
+                    _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})");
+
+                    // Игра успела запуститься, но потом упала — пользователю тоже нужен анализ краша.
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        AppendLog($"Crash Assistant: {analysis.Summary}");
+                        SetStatus("Minecraft crashed");
+                        System.Windows.MessageBox.Show(this, analysis.Details, "Анализатор краша", MessageBoxButton.OK, MessageBoxImage.Warning);
                     });
                 }
 
@@ -1580,6 +2786,8 @@ public partial class MainWindow : Window, IDisposable
                 ["launchAttemptId"] = launchAttemptId,
                 ["stage"] = "early_exit",
                 ["exitCode"] = process.ExitCode,
+                ["exitCodeHex"] = analysis.ExitCodeHex,
+                ["exitCodeDescription"] = analysis.ExitCodeDescription,
                 ["runtimeSeconds"] = (int)runtime.TotalSeconds,
                 ["installDurationMs"] = installDurationMs,
                 ["summary"] = analysis.Summary,
@@ -1587,8 +2795,12 @@ public partial class MainWindow : Window, IDisposable
                 ["signature"] = analysis.Signature,
                 ["evidence"] = analysis.Evidence,
                 ["hasCrashReport"] = analysis.HasCrashReport,
+                ["hasHsErr"] = analysis.HasHsErr,
+                ["logTail"] = analysis.LogTail,
                 ["javaSource"] = javaSource
             });
+
+            _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})");
 
             await Dispatcher.InvokeAsync(() =>
             {
@@ -1615,10 +2827,11 @@ public partial class MainWindow : Window, IDisposable
         menu.Items.Add(new WinForms.ToolStripSeparator());
         menu.Items.Add("Выход", null, (_, _) => Dispatcher.Invoke(ExitApplication));
 
+        _trayIconImage = LoadTrayIcon();
         _trayIcon = new WinForms.NotifyIcon
         {
             Text = "BL-modern TFGM",
-            Icon = LoadTrayIcon(),
+            Icon = _trayIconImage,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -1633,7 +2846,9 @@ public partial class MainWindow : Window, IDisposable
             return new Drawing.Icon(iconStream);
         }
 
-        return Drawing.SystemIcons.Application;
+        // Клонируем системную иконку, чтобы её можно было безопасно диспозить в Dispose()
+        // (общий статический SystemIcons.Application диспозить нельзя).
+        return (Drawing.Icon)Drawing.SystemIcons.Application.Clone();
     }
 
     private void MinimizeToTray(string message)
@@ -1665,7 +2880,14 @@ public partial class MainWindow : Window, IDisposable
     private void ExitApplication()
     {
         _allowClose = true;
-        Close();
+        // Снимаем иконку трея заранее: её скрытое окно WinForms иначе может пережить завершение WPF.
+        try { _trayIcon?.Dispose(); _trayIcon = null; } catch { /* выход не должен падать из-за трея */ }
+        Close(); // → OnClosed → Dispose() (таймеры, Discord-пайп, HttpClient)
+        // Гарантируем завершение процесса, не полагаясь только на ShutdownMode: фоновые ожидания
+        // (named pipe Discord, RegisterWaitForSingleObject) и скрытые окна трея раньше оставляли
+        // Launcher.App висеть в диспетчере задач даже после выхода из трея.
+        System.Windows.Application.Current?.Shutdown();
+        Environment.Exit(0);
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -1688,7 +2910,10 @@ public partial class MainWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _backgroundRotationTimer.Stop();
+        _serverStatsTimer.Stop();
         _trayIcon?.Dispose();
+        _trayIconImage?.Dispose();
         _discordPresence.Dispose();
         _httpClient.Dispose();
     }
@@ -1713,10 +2938,53 @@ public partial class MainWindow : Window, IDisposable
         OpenPath(directory);
     }
 
+    private static readonly object LogFileLock = new();
+    private static string? _logFilePath;
+
     private void AppendLog(string message)
     {
-        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+        var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        Debug.WriteLine(line);
+        WriteLogLineToFile(line);
     }
+
+    // Постоянный файловый лог: в Release-сборке Debug.WriteLine никуда не пишет,
+    // поэтому диагностику обычных проблем без файла собрать невозможно.
+    private static void WriteLogLineToFile(string line)
+    {
+        try
+        {
+            var path = ResolveLogFilePath();
+            lock (LogFileLock)
+            {
+                File.AppendAllText(path, line + Environment.NewLine);
+            }
+        }
+        catch
+        {
+            // Логирование не должно ронять приложение.
+        }
+    }
+
+    private static string ResolveLogFilePath()
+    {
+        if (_logFilePath is not null)
+        {
+            return _logFilePath;
+        }
+
+        var logRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ForgeLauncher",
+            ".launcher",
+            "logs");
+        Directory.CreateDirectory(logRoot);
+        _logFilePath = Path.Combine(logRoot, $"launcher-{DateTime.Now:yyyyMMdd}.log");
+        return _logFilePath;
+    }
+
+    private static CancellationTokenSource CreateLightRequestCts() =>
+        new(TimeSpan.FromSeconds(LightRequestTimeoutSeconds));
 
     private async Task TrackTelemetryAsync(string eventName, Dictionary<string, object?>? properties = null)
     {
@@ -1729,6 +2997,7 @@ public partial class MainWindow : Window, IDisposable
 
         try
         {
+            using var cts = CreateLightRequestCts();
             await _telemetryClient.SendEventAsync(
                 TelemetryUrl,
                 _userSettings.ClientId,
@@ -1736,7 +3005,8 @@ public partial class MainWindow : Window, IDisposable
                 GetTelemetryModpackVersion(),
                 Environment.OSVersion.VersionString,
                 eventName,
-                properties);
+                properties,
+                cts.Token);
         }
         catch (Exception exception)
         {
@@ -1915,10 +3185,5 @@ public partial class MainWindow : Window, IDisposable
     private sealed record InstallOperationTelemetry(string Mode, bool Installed, long DurationMs, int ChangedFiles);
 }
 
-internal enum PrimaryActionState
-{
-    LauncherUpdate,
-    Install,
-    Update,
-    Play
-}
+// PrimaryActionState переехал в ядро (Launcher.App.Services): состояние главной кнопки
+// вычисляется из данных и одинаково нужно обоим интерфейсам.

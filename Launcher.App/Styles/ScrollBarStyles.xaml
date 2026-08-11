@@ -1,6 +1,19 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- Стеклянные ресурсы, общие для всех окон. Цветные GlassFill/GlassStroke перекрашивает
+         LauncherThemeCatalog.ApplyTheme на уровне каждого окна; здесь — дефолты до применения темы.
+         Тень нейтральна к теме. -->
+    <LinearGradientBrush x:Key="GlassFillBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#592B3B32" Offset="0" />
+        <GradientStop Color="#73111A16" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="GlassStrokeBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#5CFFFFFF" Offset="0" />
+        <GradientStop Color="#15FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+    <DropShadowEffect x:Key="GlassShadow" BlurRadius="20" ShadowDepth="0" Color="#000000" Opacity="0.42" RenderingBias="Performance" />
+
     <Style x:Key="LauncherScrollLineButton" TargetType="RepeatButton">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />

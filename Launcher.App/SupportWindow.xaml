@@ -168,7 +168,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                <Border Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="18" Effect="{DynamicResource GlassShadow}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -182,7 +182,7 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="2" Background="{DynamicResource CardAltBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="14">
+                <Border Grid.Row="2" Background="{DynamicResource GlassFillBrush}" BorderBrush="{DynamicResource GlassStrokeBrush}" BorderThickness="1" CornerRadius="18" Padding="14" Effect="{DynamicResource GlassShadow}">
                     <ScrollViewer x:Name="MessagesScrollViewer" VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="MessagesItemsControl">
                             <ItemsControl.ItemTemplate>

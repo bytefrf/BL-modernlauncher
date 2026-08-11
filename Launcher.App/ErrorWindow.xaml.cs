@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Windows;
 using Launcher.App.Theming;
 
@@ -19,7 +18,7 @@ public partial class ErrorWindow : Window
         _logPath = logPath;
         _themeId = themeId;
         _sendLogAsync = sendLogAsync;
-        LauncherThemeCatalog.ApplyTheme(Resources, _themeId);
+        LauncherThemeBrushes.ApplyTheme(Resources, _themeId);
 
         TitleTextBlock.Text = errorInfo.Title;
         SummaryTextBlock.Text = errorInfo.Summary;
@@ -47,22 +46,8 @@ public partial class ErrorWindow : Window
 
     private void CopyButton_Click(object sender, RoutedEventArgs e)
     {
-        var text = new StringBuilder()
-            .AppendLine(_errorInfo.Title)
-            .AppendLine()
-            .AppendLine(_errorInfo.Summary)
-            .AppendLine()
-            .AppendLine("Что сделать:")
-            .AppendLine(string.Join(Environment.NewLine, _errorInfo.Actions.Select(action => "- " + action)))
-            .AppendLine()
-            .AppendLine("Лог:")
-            .AppendLine(_logPath)
-            .AppendLine()
-            .AppendLine("Технические детали:")
-            .AppendLine(_errorInfo.TechnicalDetails)
-            .ToString();
-
-        System.Windows.Clipboard.SetText(text);
+        // Текст общий с Avalonia-версией: поддержка получает одинаковую выжимку с любой ОС.
+        System.Windows.Clipboard.SetText(ErrorReport.BuildClipboardText(_errorInfo, _logPath));
     }
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
@@ -109,5 +94,3 @@ public partial class ErrorWindow : Window
         }
     }
 }
-
-public sealed record SupportLogSendResult(bool Sent, string PackagePath, string Message);
