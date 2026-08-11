@@ -539,6 +539,30 @@ if (args.Length >= 1 && args[0].Equals("--crash", StringComparison.OrdinalIgnore
     var wrongArch = AnalyzeLog("dyld: no suitable image found. mach-o, but wrong architecture", 1);
     Expect("macOS: не та архитектура Java", wrongArch.Category == "java_wrong_arch", wrongArch.Category);
 
+    // Битый конфиг мода. Текст взят из настоящего крэш-репорта (саппорт-логи 03–10.08:
+    // у игрока 17 попыток подряд, игра не запускалась вообще, а причина числилась «unknown»).
+    const string configCrash =
+        "net.minecraftforge.fml.config.ConfigFileTypeHandler$ConfigLoadingException: " +
+        "Failed loading config file barrels_2012-server.toml of type SERVER for modid barrels_2012\n" +
+        "Caused by: com.electronwill.nightconfig.core.io.ParsingException: Not enough data available";
+    var brokenConfig = AnalyzeLog(configCrash, 1);
+    Expect("битый конфиг мода распознан", brokenConfig.Category == "config_corrupted", brokenConfig.Category);
+    Expect("в совете есть имя файла",
+        brokenConfig.Summary.Contains("barrels_2012-server.toml"), brokenConfig.Summary);
+    // SERVER-конфиг лежит внутри мира: подскажи папку config — игрок не найдёт там файла.
+    Expect("папка указана как serverconfig внутри мира",
+        brokenConfig.Summary.Contains("serverconfig"), brokenConfig.Summary);
+    Expect("сказано, что мир не пострадает",
+        brokenConfig.Summary.Contains("не пострада"), brokenConfig.Summary);
+    Expect("пустой файл объяснён",
+        brokenConfig.Summary.Contains("пустым"), brokenConfig.Summary);
+
+    var clientConfig = AnalyzeLog(
+        "ConfigLoadingException: Failed loading config file jei-client.toml of type CLIENT for modid jei", 1);
+    Expect("CLIENT-конфиг ищется в папке config",
+        clientConfig.Summary.Contains("config\\jei-client.toml") && !clientConfig.Summary.Contains("serverconfig"),
+        clientConfig.Summary);
+
     // Регресс: windows-паттерны продолжают работать.
     var nvidiaWindows = AnalyzeLog("# C  [nvoglv64.dll+0x8a1b2]", unchecked((int)0xC0000005));
     Expect("NVIDIA на Windows не сломался", nvidiaWindows.Category == "graphics_driver", nvidiaWindows.Category);

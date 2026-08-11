@@ -19,6 +19,10 @@ public static class CrashAnalyzerService
         "серверы Mojang (блокировка провайдера, DNS или фильтр антивируса). Смени DNS на 1.1.1.1 или 8.8.8.8 либо " +
         "включи VPN и нажми «Проверить файлы» в настройках лаунчера.";
 
+    private const string ConfigCorruptedGenericSummary =
+        "Повреждён файл настроек одного из модов — игра не может его прочитать и падает на запуске мира. " +
+        "Удали этот файл: игра создаст его заново со значениями по умолчанию.";
+
     private static readonly (string Category, string[] Needles, string Summary)[] KnownPatterns =
     [
         ("launch_classpath",
@@ -210,6 +214,17 @@ public static class CrashAnalyzerService
         ],
         "Неверная версия Java. Для этой сборки нужна Java 17."),
 
+        // Битый конфиг мода. Разбор идёт ДО mod_dependency и missing_file: там встречаются те же слова
+        // про мод и файл, а починка совсем другая — надо удалить один файл, а не проверять сборку.
+        // Найдено по саппорт-логам 03–10.08: у игрока 17 попыток подряд, игра не запускалась вообще.
+        ("config_corrupted",
+        [
+            "ConfigLoadingException",
+            "Failed loading config file"
+        ],
+        // Имя файла и папку подставляет RefineConfigSummary — без них совет бесполезен.
+        ConfigCorruptedGenericSummary),
+
         ("mod_dependency",
         [
             "Missing or unsupported mandatory dependencies",
@@ -280,6 +295,7 @@ public static class CrashAnalyzerService
         var finding = DetectFinding(crashText, exitCode, allowFallback: false)
                       ?? DetectFinding(combined, exitCode, allowFallback: true)!;
         var summary = RefineClasspathSummary(finding, installRoot);
+        summary = RefineConfigSummary(finding, summary, crashText, combined);
         var details = BuildDetails(exitCode, summary, latestLogPath, crashReportPath);
 
         return new CrashAnalysisResult(
@@ -319,6 +335,58 @@ public static class CrashAnalyzerService
             ? ClasspathBlockedSummary
             : ClasspathGenericSummary;
     }
+
+    /// <summary>
+    /// Дописывает к совету про битый конфиг имя файла и папку, где он лежит. Без этого игроку
+    /// сказано «удали файл настроек», а какой именно из полутора сотен модов — непонятно.
+    /// </summary>
+    /// <remarks>
+    /// Forge делит конфиги по типу: SERVER лежит ВНУТРИ мира (<c>saves\мир\serverconfig</c>),
+    /// остальные — в общей папке <c>config</c>. Перепутать нельзя: в <c>config</c> файла с этим
+    /// именем просто нет, и игрок решит, что совет неверный.
+    /// </remarks>
+    private static string RefineConfigSummary(CrashFinding finding, string summary, string crashText, string combined)
+    {
+        if (!string.Equals(finding.Category, "config_corrupted", StringComparison.Ordinal))
+        {
+            return summary;
+        }
+
+        var match = ConfigFilePattern.Match(crashText);
+        if (!match.Success)
+        {
+            match = ConfigFilePattern.Match(combined);
+        }
+
+        if (!match.Success)
+        {
+            return summary;
+        }
+
+        var fileName = match.Groups["file"].Value;
+        var isServerConfig = match.Groups["type"].Value.Equals("SERVER", StringComparison.OrdinalIgnoreCase);
+        var folder = isServerConfig
+            ? "saves\\<папка мира>\\serverconfig"
+            : "config";
+
+        var text = $"Повреждён файл настроек мода — игра не может его прочитать и падает на запуске. " +
+                   $"Удали файл {folder}\\{fileName} в папке со сборкой: игра создаст его заново. " +
+                   $"Мир и постройки при этом не пострадают.";
+
+        // «Not enough data available» у nightconfig означает пустой или обрезанный файл — обычно после
+        // выключения питания или закрытия игры через диспетчер задач. Игроку полезно знать причину:
+        // иначе он ждёт, что это повторится, и не понимает, что делал не так.
+        if (combined.Contains("Not enough data available", StringComparison.OrdinalIgnoreCase))
+        {
+            text += " Файл оказался пустым — так бывает, если игра завершилась аварийно во время сохранения настроек.";
+        }
+
+        return text;
+    }
+
+    private static readonly Regex ConfigFilePattern = new(
+        @"Failed loading config file (?<file>[^\s]+\.toml) of type (?<type>[A-Z]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static bool HasNonAscii(string? value) =>
         !string.IsNullOrEmpty(value) && value.Any(character => character > '\u007F');
