@@ -118,3 +118,26 @@ jobs:
         with:
           name: launcher-${{ matrix.rid }}
           path: publish/${{ matrix.rid }}
+
+      # Готовые к раздаче пакеты: .deb и .AppImage для Linux, .app в .dmg для macOS.
+      # Собираются на своей же системе — dpkg-deb и hdiutil кросс-платформенных аналогов
+      # не имеют.
+      - name: Build installable packages
+        shell: bash
+        run: |
+          set -e
+          version=$(grep -oPm1 '(?<=<Version>)[^<]+' Launcher.Avalonia/Launcher.Avalonia.csproj)
+          echo "версия: $version"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            bash packaging/build-linux-packages.sh "publish/${{ matrix.rid }}" "$version" packages
+          else
+            bash packaging/build-macos-package.sh "publish/${{ matrix.rid }}" "$version" packages
+          fi
+          ls -la packages
+
+      - name: Upload installable packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.rid }}
+          path: packages

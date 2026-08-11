@@ -29,7 +29,10 @@ public static class DesktopShortcutService
 
         if (string.IsNullOrWhiteSpace(desktop))
         {
-            throw new InvalidOperationException("Не удалось найти папку рабочего стола.");
+            // На Linux эти папки берутся из XDG, а он бывает не настроен — ровно так же,
+            // как GetFolderPath(ApplicationData) вернул пустоту на живой Ubuntu.
+            // Без фолбэка кнопка «Ярлык на рабочий стол» просто ругалась бы.
+            desktop = Path.Combine(LauncherPaths.GetHomeRoot(), "Desktop");
         }
 
         Directory.CreateDirectory(desktop);

@@ -167,11 +167,18 @@
                                            Foreground="{DynamicResource TextBrush}" />
 
                                 <StackPanel Margin="0,16,0,0" Orientation="Horizontal" Spacing="10">
-                                    <Button Width="180" Content="Открыть папку"
+                                    <Button Width="170" Content="Открыть папку"
                                             Theme="{StaticResource SoftButton}" Click="OpenInstallFolder_Click" />
+                                    <Button Width="130" Content="latest.log"
+                                            Theme="{StaticResource SoftButton}" Click="OpenLatestLog_Click"
+                                            ToolTip.Tip="Лог последнего запуска игры — его просит поддержка." />
                                     <Button Width="210" Content="Проверить целостность"
                                             Theme="{StaticResource SoftButton}" Click="VerifyFiles_Click"
                                             ToolTip.Tip="Переустановит файлы сборки поверх текущих: чинит недокачанные и повреждённые." />
+                                </StackPanel>
+                                <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                    <Button Width="260" Content="Ярлык на рабочий стол"
+                                            Theme="{StaticResource SoftButton}" Click="CreateShortcut_Click" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

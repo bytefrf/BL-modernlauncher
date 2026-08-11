@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using Launcher.App.Configuration;
 using Launcher.App.Models;
 using Launcher.App.Platform;
+using Launcher.App.Services;
 using Launcher.App.Theming;
 using Launcher.Avalonia.Theming;
 
@@ -223,8 +224,7 @@ public partial class SettingsWindow : Window
     {
         try
         {
-            var path = (this.FindControl<TextBox>("InstallPathTextBox")!.Text ?? string.Empty).Trim();
-            var target = LauncherPaths.ExpandFull(string.IsNullOrWhiteSpace(path) ? _defaultInstallRoot : path);
+            var target = ResolveInstallRootFromFields();
             Directory.CreateDirectory(target);
 
             // UseShellExecute открывает папку системным файловым менеджером на всех трёх ОС.
@@ -236,6 +236,63 @@ public partial class SettingsWindow : Window
             hint.Text = $"Не удалось открыть папку: {exception.Message}";
             hint.IsVisible = true;
         }
+    }
+
+    /// <summary>
+    /// Открывает лог последнего запуска игры. Его первым делом просит поддержка,
+    /// поэтому кнопка есть и в WPF-версии.
+    /// </summary>
+    private void OpenLatestLog_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = Path.Combine(ResolveInstallRootFromFields(), "logs", "latest.log");
+        if (!File.Exists(path))
+        {
+            ShowHint($"Файл latest.log пока не найден: {path}");
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            ShowHint($"Не удалось открыть latest.log: {exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Ярлык на рабочем столе. Сервис в ядре сам выбирает формат: .lnk на Windows,
+    /// .desktop на Linux, симлинк на macOS.
+    /// </summary>
+    private void CreateShortcut_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = DesktopShortcutService.Create("BL-modern TFGM");
+            ShowHint($"Ярлык создан: {path}");
+        }
+        catch (Exception exception)
+        {
+            ShowHint($"Не удалось создать ярлык: {exception.Message}");
+        }
+    }
+
+    private string ResolveInstallRootFromFields()
+    {
+        var path = (this.FindControl<TextBox>("InstallPathTextBox")!.Text ?? string.Empty).Trim();
+        return LauncherPaths.ExpandFull(string.IsNullOrWhiteSpace(path) ? _defaultInstallRoot : path);
+    }
+
+    /// <summary>
+    /// Сообщения кнопок показываем в той же подсказке, что и проблемы с путём: отдельного
+    /// окна с «ОК» в этом интерфейсе нет, а в WPF на его месте был MessageBox.
+    /// </summary>
+    private void ShowHint(string message)
+    {
+        var hint = this.FindControl<TextBlock>("InstallPathHint")!;
+        hint.Text = message;
+        hint.IsVisible = true;
     }
 
     /// <summary>Некорректное разрешение не должно ломать запуск — падаем на значение по умолчанию.</summary>
