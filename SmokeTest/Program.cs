@@ -283,6 +283,90 @@ if (args.Length >= 1 && args[0].Equals("--error-report", StringComparison.Ordina
     return;
 }
 
+// Разбор крашей игры: SmokeTest --crash (без сети)
+// Проверяем распознавание причин по логам и расшифровку кодов выхода. Отдельный интерес —
+// Linux/macOS: там другие имена драйверов и другие коды (128+сигнал).
+if (args.Length >= 1 && args[0].Equals("--crash", StringComparison.OrdinalIgnoreCase))
+{
+    var ok = 0;
+    var bad = 0;
+    void Expect(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { ok++; } else { bad++; }
+    }
+
+    // Готовим папку сборки с логом, как её видит анализатор: <install>/logs/latest.log.
+    var sandbox = Path.Combine(Path.GetTempPath(), "bl-crash-" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(Path.Combine(sandbox, "logs"));
+
+    CrashAnalysisResult AnalyzeLog(string logText, int exitCode)
+    {
+        File.WriteAllText(Path.Combine(sandbox, "logs", "latest.log"), logText);
+        return CrashAnalyzerService.Analyze(sandbox, exitCode);
+    }
+
+    // Linux: драйверы. На Windows такие строки не встречаются, поэтому списки не пересекаются.
+    var nvidiaLinux = AnalyzeLog("# Problematic frame:\n# C  [libnvidia-glcore.so.550.90+0x1234]", 139);
+    Expect("NVIDIA на Linux распознан", nvidiaLinux.Category == "graphics_driver", nvidiaLinux.Category);
+    Expect("совет про prime-run, а не про javaw.exe",
+        nvidiaLinux.Summary.Contains("prime-run") && !nvidiaLinux.Summary.Contains("javaw"),
+        nvidiaLinux.Summary[..Math.Min(70, nvidiaLinux.Summary.Length)]);
+
+    var mesa = AnalyzeLog("# C  [radeonsi_dri.so+0x99]", 139);
+    Expect("Mesa/AMD на Linux распознан", mesa.Category == "graphics_driver", mesa.Category);
+
+    var swrast = AnalyzeLog("[main/INFO]: OpenGL renderer: llvmpipe (LLVM 15, 256 bits) swrast", 0);
+    Expect("программный рендеринг распознан", swrast.Category == "graphics_software_render", swrast.Category);
+
+    var display = AnalyzeLog("GLFW error 65550: X11: Failed to open display :0", 1);
+    Expect("нет дисплея X11", display.Category == "graphics_display", display.Category);
+
+    // macOS
+    var firstThread = AnalyzeLog("Exception in thread \"main\" java.lang.IllegalStateException: " +
+        "Please run the JVM with -XstartOnFirstThread", 1);
+    Expect("macOS: -XstartOnFirstThread", firstThread.Category == "macos_first_thread", firstThread.Category);
+
+    var wrongArch = AnalyzeLog("dyld: no suitable image found. mach-o, but wrong architecture", 1);
+    Expect("macOS: не та архитектура Java", wrongArch.Category == "java_wrong_arch", wrongArch.Category);
+
+    // Регресс: windows-паттерны продолжают работать.
+    var nvidiaWindows = AnalyzeLog("# C  [nvoglv64.dll+0x8a1b2]", unchecked((int)0xC0000005));
+    Expect("NVIDIA на Windows не сломался", nvidiaWindows.Category == "graphics_driver", nvidiaWindows.Category);
+
+    // Коды выхода. На Unix это 128+сигнал, кодов NTSTATUS там не бывает.
+    var exit139 = CrashAnalyzerService.DescribeExitCode(139);
+    var exit137 = CrashAnalyzerService.DescribeExitCode(137);
+    if (HostPlatform.IsWindows)
+    {
+        Expect("Windows: 0xC0000005 расшифрован",
+            CrashAnalyzerService.DescribeExitCode(unchecked((int)0xC0000005)).Contains("ACCESS_VIOLATION"),
+            CrashAnalyzerService.DescribeExitCode(unchecked((int)0xC0000005)));
+        Expect("Windows: код 139 остаётся числом", exit139 == "код 139", exit139);
+    }
+    else
+    {
+        Expect("Unix: 139 → SIGSEGV", exit139.Contains("SIGSEGV"), exit139);
+        Expect("Unix: 137 → нехватка памяти", exit137.Contains("SIGKILL") && exit137.Contains("памяти"), exit137);
+    }
+
+    // Приватность: в «уликах» не должно остаться ни windows-пути, ни домашней папки Unix —
+    // они уезжают в телеметрию.
+    var pathLeak = AnalyzeLog("# C  [libnvidia-glcore.so] loaded from /home/ivan/games/.launcher/runtime", 139);
+    Expect("домашняя папка Unix вычищена из улик",
+        !pathLeak.Evidence.Contains("/home/ivan"), pathLeak.Evidence);
+
+    var winPathLeak = AnalyzeLog(@"# C  [nvoglv64.dll+0x1] C:\Users\Ivan\forge\mods", unchecked((int)0xC0000005));
+    Expect("windows-путь вычищен из улик",
+        !winPathLeak.Evidence.Contains(@"C:\Users"), winPathLeak.Evidence);
+
+    try { Directory.Delete(sandbox, true); } catch { /* временная папка */ }
+
+    Console.WriteLine($"CRASH_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={ok} fail={bad}");
+    Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
 // Прямой пинг MC-серверов: SmokeTest --ping <host> [host2 ...]
 if (args.Length >= 1 && args[0].Equals("--ping", StringComparison.OrdinalIgnoreCase))
 {

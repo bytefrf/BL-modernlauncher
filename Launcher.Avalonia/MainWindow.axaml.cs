@@ -27,8 +27,13 @@ namespace Launcher.Avalonia;
 
 public partial class MainWindow : Window
 {
-    // Адрес приёмника саппорт-логов — тот же, что и у WPF-версии.
+    // Адреса те же, что и у WPF-версии: обе версии пишут в один приёмник.
     private const string SupportLogsUrl = "https://bl-modern.ru/api/support_logs.php";
+    private const string TelemetryUrl = "https://bl-modern.ru/api/telemetry.php";
+
+    // Сколько игра должна прожить, чтобы запуск считался удавшимся. Выход раньше — это провал
+    // запуска (не докачались файлы, не та Java), позже — краш уже в игре.
+    private const int LaunchSuccessThresholdSeconds = 45;
 
     private readonly MainWindowViewModel _viewModel = new();
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(2) };
@@ -124,6 +129,9 @@ public partial class MainWindow : Window
             {
                 SetStatus("Не настроен ни каталог, ни манифест сборки");
             }
+
+            _ = TrackTelemetryAsync("launcher_started");
+            _ = TrackTelemetryAsync("system_info", BuildSystemInfoProperties());
         }
         catch (Exception exception)
         {
@@ -759,6 +767,19 @@ public partial class MainWindow : Window
         ShowInTaskbar = false;
     }
 
+    /// <summary>
+    /// Возвращает окно из трея. Нужен после краша игры: разбор нельзя показывать поверх
+    /// спрятанного окна — игрок его просто не увидит.
+    /// </summary>
+    private void RestoreFromTray()
+    {
+        (Application.Current as App)?.SetTrayVisible(false);
+        ShowInTaskbar = true;
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
     /// <summary>Полный выход: снимаем иконку из трея, иначе она останется висеть.</summary>
     private void ExitApplication()
     {
@@ -1215,6 +1236,11 @@ public partial class MainWindow : Window
 
         _busy = true;
         button.IsEnabled = false;
+
+        // Один идентификатор на всю попытку запуска: по нему события установки, старта и краша
+        // сшиваются в одну историю на стороне сервера.
+        var launchAttemptId = Guid.NewGuid().ToString("N");
+
         try
         {
             if (_primaryActionState == PrimaryActionState.LauncherUpdate)
@@ -1263,15 +1289,25 @@ public partial class MainWindow : Window
                 ? $"Minecraft запущен (PID {result.Process.Id})"
                 : $"Minecraft запущен, подключение к {quickPlayServer}");
 
+            _ = TrackTelemetryAsync("launch_process_started", new Dictionary<string, object?>
+            {
+                ["launchAttemptId"] = launchAttemptId,
+                ["processId"] = result.Process.Id,
+                ["memoryMb"] = _userSettings.MemoryMb
+            });
+
             if (_userSettings.CloseOnGameStart)
             {
                 // Игрок выбрал закрывать лаунчер при запуске. Игра идёт отдельным процессом
-                // и продолжит работать.
+                // и продолжит работать. Мониторинг краша при этом невозможен — как и в WPF.
                 ExitApplication();
                 return;
             }
 
             MinimizeToTray();
+
+            // Ждём завершения игры в фоне: краш нужно разобрать и показать игроку.
+            _ = MonitorMinecraftProcessAsync(result.Process, installRoot, launchAttemptId);
         }
         catch (Exception exception)
         {
@@ -1284,6 +1320,226 @@ public partial class MainWindow : Window
         {
             _busy = false;
             button.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Ждёт завершения игры и разбирает причину, если она упала. Логика повторяет WPF-версию:
+    /// продержался дольше порога — запуск считается успешным; упал раньше — это провал запуска.
+    /// </summary>
+    private async Task MonitorMinecraftProcessAsync(
+        System.Diagnostics.Process process, string installRoot, string launchAttemptId)
+    {
+        var startedAt = DateTime.UtcNow;
+        var successConfirmed = false;
+
+        try
+        {
+            var exitTask = process.WaitForExitAsync();
+            var successDelayTask = Task.Delay(TimeSpan.FromSeconds(LaunchSuccessThresholdSeconds));
+
+            if (await Task.WhenAny(exitTask, successDelayTask) == successDelayTask && !process.HasExited)
+            {
+                successConfirmed = true;
+                _ = TrackTelemetryAsync("launch_succeeded", new Dictionary<string, object?>
+                {
+                    ["launchAttemptId"] = launchAttemptId,
+                    ["startupSeconds"] = LaunchSuccessThresholdSeconds
+                });
+            }
+
+            await exitTask;
+            var runtime = DateTime.UtcNow - startedAt;
+
+            // Analyze читает логи синхронно — уводим с потока интерфейса, чтобы не подвесить окно.
+            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
+
+            _ = TrackTelemetryAsync("game_session_ended", new Dictionary<string, object?>
+            {
+                ["launchAttemptId"] = launchAttemptId,
+                ["exitCode"] = process.ExitCode,
+                ["runtimeSeconds"] = (int)runtime.TotalSeconds,
+                ["graceful"] = process.ExitCode == 0
+            });
+
+            if (process.ExitCode == 0 && successConfirmed)
+            {
+                return;
+            }
+
+            if (successConfirmed)
+            {
+                // Игра успела запуститься и упала позже — разбор нужен так же, как при раннем выходе.
+                _ = TrackTelemetryAsync("game_session_crashed", BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime));
+                _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})");
+            }
+            else
+            {
+                var properties = BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime);
+                properties["stage"] = "early_exit";
+                _ = TrackTelemetryAsync("launch_failed", properties);
+                _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})");
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                RestoreFromTray();
+                SetStatus($"Игра завершилась с ошибкой: {analysis.Summary}");
+                await ShowCrashWindowAsync(analysis, installRoot);
+            });
+        }
+        catch (Exception exception)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => SetStatus($"Ошибка наблюдения за игрой: {exception.Message}"));
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
+    private static Dictionary<string, object?> BuildCrashProperties(
+        string launchAttemptId, CrashAnalysisResult analysis, int exitCode, TimeSpan runtime)
+        => new()
+        {
+            ["launchAttemptId"] = launchAttemptId,
+            ["exitCode"] = exitCode,
+            ["exitCodeHex"] = analysis.ExitCodeHex,
+            ["exitCodeDescription"] = analysis.ExitCodeDescription,
+            ["runtimeSeconds"] = (int)runtime.TotalSeconds,
+            ["crashCategory"] = analysis.Category,
+            ["summary"] = analysis.Summary,
+            ["signature"] = analysis.Signature,
+            ["evidence"] = analysis.Evidence,
+            ["hasCrashReport"] = analysis.HasCrashReport,
+            ["hasHsErr"] = analysis.HasHsErr,
+            ["logTail"] = analysis.LogTail
+        };
+
+    /// <summary>
+    /// Показывает разбор краша тем же окном, что и ошибки лаунчера: игроку незачем знать,
+    /// на каком этапе сломалось — ему нужны причина и шаги.
+    /// </summary>
+    private async Task ShowCrashWindowAsync(CrashAnalysisResult analysis, string installRoot)
+    {
+        // Details — готовый текст анализатора: раскладываем его на строки-шаги, чтобы окно
+        // выглядело как обычный разбор ошибки, а не как простыня.
+        var actions = analysis.Details
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !line.Equals(analysis.Summary, StringComparison.Ordinal))
+            .ToArray();
+
+        var info = new ErrorInfo(
+            "Игра вылетела",
+            analysis.Summary,
+            actions.Length > 0 ? actions : ["Отправь лог в поддержку — разберёмся по нему."],
+            $"Категория: {analysis.Category}{Environment.NewLine}" +
+            $"Код выхода: {analysis.ExitCodeDescription}{Environment.NewLine}" +
+            $"Найдено: {analysis.Evidence}{Environment.NewLine}{Environment.NewLine}" +
+            analysis.LogTail);
+
+        var logPath = analysis.CrashReportPath ?? analysis.LatestLogPath;
+        var dialog = new ErrorWindow(
+            info, logPath, _userSettings.ThemeId, () => SendSupportLogAsync(info, logPath));
+
+        await dialog.ShowDialog(this);
+    }
+
+    /// <summary>
+    /// Отправляет пакет логов сразу после краша, не дожидаясь действий игрока: иначе причина
+    /// известна только тому, кто нажмёт кнопку. Уважает отключённую телеметрию.
+    /// </summary>
+    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle)
+    {
+        if (!_userSettings.TelemetryEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            EnsureTelemetryIdentity();
+            var supportLogService = new SupportLogService(_httpClient);
+
+            var package = await supportLogService.CreatePackageAsync(
+                installRoot,
+                string.Empty,
+                _userSettings.ClientId,
+                GetTelemetryUsername(),
+                GetLauncherVersion(),
+                GetTelemetryModpackVersion(),
+                errorTitle,
+                CancellationToken.None);
+
+            await supportLogService.UploadAsync(
+                SupportLogsUrl,
+                package.Path,
+                _userSettings.ClientId,
+                GetTelemetryUsername(),
+                GetLauncherVersion(),
+                GetTelemetryModpackVersion(),
+                CancellationToken.None);
+        }
+        catch
+        {
+            // Молча: игрок в этот момент читает разбор краша, и сообщение про неудачную
+            // отправку архива ему ничем не поможет. Кнопка «Отправить лог» остаётся.
+        }
+    }
+
+    /// <summary>
+    /// Сводка о машине игрока. Размер экрана берём у Avalonia: <c>SystemParameters</c> из WPF
+    /// на Linux и macOS не существует.
+    /// </summary>
+    private Dictionary<string, object?> BuildSystemInfoProperties()
+    {
+        var properties = SystemInfoCollector.Collect();
+        try
+        {
+            var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+            if (screen is not null)
+            {
+                properties["screenWidth"] = screen.Bounds.Width;
+                properties["screenHeight"] = screen.Bounds.Height;
+            }
+        }
+        catch
+        {
+            // Сведения об экране необязательны и недоступны в headless-среде.
+        }
+
+        return properties;
+    }
+
+    /// <summary>
+    /// Отправляет событие телеметрии. Молчит, если игрок её отключил.
+    /// </summary>
+    private async Task TrackTelemetryAsync(string eventName, Dictionary<string, object?>? properties = null)
+    {
+        if (!_userSettings.TelemetryEnabled)
+        {
+            return;
+        }
+
+        EnsureTelemetryIdentity();
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await new TelemetryClient(_httpClient).SendEventAsync(
+                TelemetryUrl,
+                _userSettings.ClientId,
+                GetLauncherVersion(),
+                GetTelemetryModpackVersion(),
+                Environment.OSVersion.VersionString,
+                eventName,
+                properties,
+                cts.Token);
+        }
+        catch
+        {
+            // Телеметрия не должна мешать игре: недоступный сервер статистики — не повод
+            // показывать игроку ошибку.
         }
     }
 

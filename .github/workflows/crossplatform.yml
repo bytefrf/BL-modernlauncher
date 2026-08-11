@@ -55,7 +55,8 @@ jobs:
           smoke="SmokeTest/bin/Release/net8.0/SmokeTest"
           failed=0
           for mode in --selftest --classify --embedded --manifest-fallback --catalog \
-                      --primary-action --profile-isolation --markdown --servers --error-report; do
+                      --primary-action --profile-isolation --markdown --servers --error-report \
+                      --crash; do
             echo "::group::$mode"
             if ! "$smoke" "$mode"; then
               echo "::error::режим $mode завершился с ошибкой"
