@@ -1756,7 +1756,9 @@ public partial class MainWindow : Window
                 _userSettings.ClientId,
                 GetLauncherVersion(),
                 GetTelemetryModpackVersion(),
-                Environment.OSVersion.VersionString,
+                // Не OSVersion.VersionString: на Linux и macOS он одинаково начинается с «Unix»,
+                // и в статистике сайта эти системы сливались бы в одну строку.
+                HostPlatform.OsDescription,
                 eventName,
                 properties,
                 cts.Token);
@@ -1801,6 +1803,17 @@ public partial class MainWindow : Window
 
         if (update is null || string.IsNullOrWhiteSpace(update.Url))
         {
+            // Для беты на Linux и macOS сайт может отдавать не файл, а страницу загрузки:
+            // готового пакета под этот способ установки ещё нет. Отправляем туда, а не в тупик —
+            // иначе игрок увидел бы «адрес не указан» и остался бы на старой версии.
+            var downloadPage = update?.DownloadPageUrl;
+            if (!string.IsNullOrWhiteSpace(downloadPage))
+            {
+                SetStatus("Новая версия лаунчера скачивается с сайта — открыли страницу загрузки.");
+                OpenExternalLink(_modpackManifest.ResolveUri(downloadPage).ToString());
+                return;
+            }
+
             SetStatus("Для лаунчера не указан адрес пакета обновления.");
             return;
         }

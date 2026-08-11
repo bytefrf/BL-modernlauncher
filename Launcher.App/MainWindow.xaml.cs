@@ -12,6 +12,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media.Animation;
 using Launcher.App.Configuration;
 using Launcher.App.Models;
+using Launcher.App.Platform;
 using Launcher.App.Services;
 using Launcher.App.Theming;
 using WinForms = System.Windows.Forms;
@@ -2987,7 +2988,8 @@ public partial class MainWindow : Window, IDisposable
                 _userSettings.ClientId,
                 GetLauncherVersion(),
                 GetTelemetryModpackVersion(),
-                Environment.OSVersion.VersionString,
+                // На Windows значение прежнее (OSVersion.VersionString), см. HostPlatform.OsDescription.
+                HostPlatform.OsDescription,
                 eventName,
                 properties,
                 cts.Token);

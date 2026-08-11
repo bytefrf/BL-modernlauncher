@@ -620,6 +620,56 @@ if (args.Length >= 1 && args[0].Equals("--selftest", StringComparison.OrdinalIgn
     return;
 }
 
+// Описание системы для телеметрии: SmokeTest --platform
+// Нужен потому, что сайт считает игроков по строке os_version. Если Linux и macOS отдадут
+// неразличимые строки (как было с «Unix 6.6.87»), в админке они сольются в одну графу.
+if (args.Length >= 1 && args[0].Equals("--platform", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var description = HostPlatform.OsDescription;
+    Console.WriteLine($"os_version = «{description}»  семейство = {HostPlatform.OsFamilyName}");
+
+    Check("описание непустое", !string.IsNullOrWhiteSpace(description), description);
+    // 64 — длина колонки os_version в launcher_telemetry_events; сайт молча обрежет остальное.
+    Check("влезает в колонку сайта (≤64)", description.Length <= 64, $"{description.Length} символов");
+
+    var expectedPrefix = HostPlatform.IsWindows ? "Microsoft Windows" : HostPlatform.IsMacOS ? "macOS" : "Linux";
+    Check("система узнаётся по началу строки",
+        description.StartsWith(expectedPrefix, StringComparison.Ordinal),
+        $"ожидали «{expectedPrefix}…»");
+
+    // Главное свойство: строка НЕ должна начинаться с «Unix» — именно из-за этого
+    // Linux и macOS были неотличимы в отчёте.
+    Check("не «Unix» (Linux и macOS различимы)",
+        !description.StartsWith("Unix", StringComparison.OrdinalIgnoreCase),
+        description);
+
+    if (HostPlatform.IsWindows)
+    {
+        // Регресс: на Windows значение обязано остаться ровно прежним, иначе в статистике
+        // сайта появится вторая группа тех же самых игроков.
+        Check("на Windows значение не изменилось",
+            description == Environment.OSVersion.VersionString,
+            Environment.OSVersion.VersionString);
+    }
+    else
+    {
+        // Повторный вызов идёт из кэша (sw_vers/os-release читаются один раз за запуск).
+        Check("значение стабильно между вызовами", description == HostPlatform.OsDescription, "совпало");
+    }
+
+    Console.WriteLine($"PLATFORM_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Проверка встроенных ресурсов (без сети): SmokeTest --embedded
 // Ресурсы лежат в той же сборке, что и читающий их код (Assembly.GetExecutingAssembly()).
 // После переезда кода в Launcher.Core такая ошибка иначе всплыла бы только у игрока в рантайме.
