@@ -24,6 +24,24 @@ internal static class Program
             return;
         }
 
+        // --check-install ставит сборку целиком, --check-launch дополнительно запускает игру
+        // и смотрит, прожила ли она заданное время (по умолчанию 90 секунд).
+        var install = args.Any(argument => argument.Equals("--check-install", StringComparison.OrdinalIgnoreCase));
+        var launch = args.Any(argument => argument.Equals("--check-launch", StringComparison.OrdinalIgnoreCase));
+        if (install || launch)
+        {
+            var watchSeconds = 90;
+            var watchArgument = args.FirstOrDefault(argument =>
+                argument.StartsWith("--watch-seconds=", StringComparison.OrdinalIgnoreCase));
+            if (watchArgument is not null && int.TryParse(watchArgument["--watch-seconds=".Length..], out var parsed))
+            {
+                watchSeconds = parsed;
+            }
+
+            Environment.ExitCode = RuntimeCheck.RunInstallAsync(launch, watchSeconds).GetAwaiter().GetResult();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
