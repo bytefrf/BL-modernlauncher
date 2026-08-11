@@ -319,7 +319,11 @@ public partial class MainWindow : Window
 
             // Первая картинка показывается отдельным блоком сверху, а не внутри текста.
             var body = MarkdownParser.ExtractFirstImage(latest.Description, out var inlineImageUrl);
-            var imageUrl = string.IsNullOrWhiteSpace(latest.ImageUrl) ? inlineImageUrl : latest.ImageUrl;
+            var imageSource = string.IsNullOrWhiteSpace(latest.ImageUrl) ? inlineImageUrl : latest.ImageUrl;
+
+            // Адреса в ленте бывают относительными — без приведения к абсолютным картинка
+            // не грузится, а кнопка «Читать» ведёт в никуда.
+            var imageUrl = NewsLinkResolver.Resolve(imageSource, newsUrl);
 
             panel.Children.Clear();
             foreach (var control in MarkdownView.Render(body, this, OpenExternalLink))
@@ -329,9 +333,10 @@ public partial class MainWindow : Window
 
             await ShowNewsImageAsync(imageUrl);
 
+            var newsLink = NewsLinkResolver.Resolve(latest.Url, newsUrl);
             var openButton = this.FindControl<Button>("OpenNewsButton")!;
-            openButton.IsVisible = !string.IsNullOrWhiteSpace(latest.Url);
-            openButton.Tag = latest.Url;
+            openButton.IsVisible = !string.IsNullOrWhiteSpace(newsLink);
+            openButton.Tag = newsLink;
         }
         catch (Exception exception)
         {
@@ -1010,12 +1015,45 @@ public partial class MainWindow : Window
             ["themeId"] = _userSettings.ThemeId,
             ["soundEnabled"] = _userSettings.SoundEnabled
         });
+
+        if (dialog.RequestedIntegrityCheck)
+        {
+            await VerifyFilesAsync();
+        }
+    }
+
+    /// <summary>
+    /// «Проверить целостность»: переустанавливает файлы сборки поверх текущих. Чинит случай,
+    /// когда часть файлов не докачалась или повреждена, а по версии всё «на месте».
+    /// </summary>
+    private async Task VerifyFilesAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await InstallGameFilesAsync(Guid.NewGuid().ToString("N"), "verify", force: true);
+            UpdatePrimaryActionButton();
+        }
+        catch (Exception exception)
+        {
+            await ShowLauncherErrorAsync(exception);
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private void OpenNewsButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { Tag: string url } && !string.IsNullOrWhiteSpace(url))
         {
+            _ = TrackTelemetryAsync("news_opened");
             OpenExternalLink(url);
         }
     }
@@ -1785,7 +1823,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// Ставит или обновляет файлы игры через общий с WPF оркестратор.
     /// </summary>
-    private async Task InstallGameFilesAsync(string operationId = "", string trigger = "launch")
+    private async Task InstallGameFilesAsync(string operationId = "", string trigger = "launch", bool force = false)
     {
         var progressBar = this.FindControl<ProgressBar>("LauncherProgressBar")!;
 
@@ -1793,8 +1831,19 @@ public partial class MainWindow : Window
         {
             ["trigger"] = trigger,
             ["operationId"] = operationId,
-            ["force"] = false
+            ["force"] = force
         });
+
+        // Место на диске проверяем ДО загрузки: сборка весит гигабайты, и упереться в конец
+        // диска на 90% установки — худший из вариантов.
+        var spaceCheck = DiskSpaceService.CheckInstallSpace(
+            ModpackCatalogLogic.ResolveEffectiveInstallRoot(_configuration!, _modpackManifest, _userSettings),
+            _modpackManifest);
+        SetStatus(spaceCheck.Message);
+        if (!spaceCheck.IsOk)
+        {
+            throw new InvalidOperationException(spaceCheck.Message);
+        }
 
         // Прогресс приходит из фоновых потоков — Avalonia сам возвращает его в поток интерфейса
         // через Progress<T>, созданный здесь.
@@ -1819,7 +1868,7 @@ public partial class MainWindow : Window
                 Scaled(0, 100),
                 // Доп. моды ещё не перенесены — возвращать в mods/ пока нечего.
                 () => Task.CompletedTask),
-            forceArchiveInstall: false);
+            forceArchiveInstall: force);
 
         progressBar.Value = 100;
         SetStatus(outcome.StatusText);
@@ -1832,7 +1881,7 @@ public partial class MainWindow : Window
             ["changedFiles"] = outcome.ChangedFiles,
             ["trigger"] = trigger,
             ["operationId"] = operationId,
-            ["force"] = false
+            ["force"] = force
         });
     }
 
@@ -1900,7 +1949,17 @@ public partial class MainWindow : Window
             foreach (var (window, name) in windows)
             {
                 window.Show(this);
-                failures += await CaptureAsync(window, Path.Combine(directory, $"{name}.png"), close: true);
+                failures += await CaptureAsync(window, Path.Combine(directory, $"{name}.png"), close: false);
+
+                // Настройки длиннее экрана: без второго кадра нижние разделы (установка, Java,
+                // окно игры, статистика) вообще не видно.
+                if (window is SettingsWindow settings)
+                {
+                    settings.FindControl<ScrollViewer>("SettingsScrollViewer")?.ScrollToEnd();
+                    failures += await CaptureAsync(window, Path.Combine(directory, $"{name}-bottom.png"), close: false);
+                }
+
+                window.Close();
             }
 
             Console.WriteLine($"SCREENSHOTS_RESULT={(failures == 0 ? "PASS" : "FAIL")} dir={directory} failed={failures}");
@@ -2029,6 +2088,12 @@ public partial class MainWindow : Window
 
             if (upload.Success)
             {
+                _ = TrackTelemetryAsync("support_log_sent", new Dictionary<string, object?>
+                {
+                    ["supportId"] = upload.Id,
+                    ["includedFiles"] = package.IncludedFileCount
+                });
+
                 var idText = string.IsNullOrWhiteSpace(upload.Id) ? string.Empty : $" Номер: {upload.Id}.";
                 return new SupportLogSendResult(true, package.Path, $"Лог отправлен в поддержку.{idText}");
             }

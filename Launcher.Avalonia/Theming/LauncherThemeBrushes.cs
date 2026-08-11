@@ -67,6 +67,26 @@ public static class LauncherThemeBrushes
         Set(resources, "SliderTrackFillPressed", theme.Stroke);
         Set(resources, "SliderTrackFillDisabled", theme.Stroke);
 
+        // Галочки и радиокнопки — та же история, что и с ползунком: Fluent красит их
+        // системным синим. Птичку внутри делаем тёмной, иначе она сливается с золотым фоном.
+        Set(resources, "CheckBoxCheckBackgroundFillChecked", theme.Accent);
+        Set(resources, "CheckBoxCheckBackgroundFillCheckedPointerOver", theme.Accent);
+        Set(resources, "CheckBoxCheckBackgroundFillCheckedPressed", theme.AccentDark);
+        Set(resources, "CheckBoxCheckBackgroundStrokeChecked", theme.PrimaryButtonBorder);
+        Set(resources, "CheckBoxCheckBackgroundStrokeCheckedPointerOver", theme.PrimaryButtonBorder);
+        Set(resources, "CheckBoxCheckBackgroundStrokeCheckedPressed", theme.PrimaryButtonBorder);
+        Set(resources, "CheckBoxCheckGlyphForegroundChecked", theme.WindowBackground);
+        Set(resources, "CheckBoxCheckGlyphForegroundCheckedPointerOver", theme.WindowBackground);
+        Set(resources, "CheckBoxCheckGlyphForegroundCheckedPressed", theme.WindowBackground);
+
+        Set(resources, "RadioButtonOuterEllipseCheckedFill", theme.Accent);
+        Set(resources, "RadioButtonOuterEllipseCheckedFillPointerOver", theme.Accent);
+        Set(resources, "RadioButtonOuterEllipseCheckedFillPressed", theme.AccentDark);
+        Set(resources, "RadioButtonOuterEllipseCheckedStroke", theme.PrimaryButtonBorder);
+        Set(resources, "RadioButtonOuterEllipseCheckedStrokePointerOver", theme.PrimaryButtonBorder);
+        Set(resources, "RadioButtonCheckGlyphFill", theme.WindowBackground);
+        Set(resources, "RadioButtonCheckGlyphFillPointerOver", theme.WindowBackground);
+
         // Стеклянные кисти выводим из цветов темы, чтобы glass перекрашивался вместе с темой:
         // заливка — затемнённые полупрозрачные тона панели/фона, грань — светлый приглушённый тон.
         resources["GlassFillBrush"] = CreateVerticalGradient(

@@ -2633,25 +2633,9 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    // Реализация переехала в ядро: тем же правилом пользуется Avalonia-версия.
     private static string ResolveOptionalNewsLink(string value, string baseUrl)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute))
-        {
-            return absolute.ToString();
-        }
-
-        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
-        {
-            return new Uri(baseUri, value).ToString();
-        }
-
-        return value;
-    }
+        => NewsLinkResolver.Resolve(value, baseUrl);
 
     private void SetStatus(string status)
     {

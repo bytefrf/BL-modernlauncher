@@ -24,6 +24,12 @@ public partial class SettingsWindow : Window
     /// <summary>Настройки после нажатия «Сохранить»; <c>null</c>, если игрок отменил.</summary>
     public UserSettings? Result { get; private set; }
 
+    /// <summary>
+    /// Игрок нажал «Проверить целостность». Само окно ничего не переустанавливает —
+    /// установка живёт в главном окне, туда же вернётся и прогресс.
+    /// </summary>
+    public bool RequestedIntegrityCheck { get; private set; }
+
     public SettingsWindow() : this(new UserSettings(), "-", 4096, 1024, 12288)
     {
     }
@@ -201,6 +207,35 @@ public partial class SettingsWindow : Window
 
         Result = settings;
         Close();
+    }
+
+    /// <summary>
+    /// «Проверить целостность»: сохраняем настройки (путь установки мог быть только что изменён)
+    /// и просим главное окно переустановить файлы поверх текущих.
+    /// </summary>
+    private void VerifyFiles_Click(object? sender, RoutedEventArgs e)
+    {
+        RequestedIntegrityCheck = true;
+        Save_Click(sender, e);
+    }
+
+    private void OpenInstallFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = (this.FindControl<TextBox>("InstallPathTextBox")!.Text ?? string.Empty).Trim();
+            var target = LauncherPaths.ExpandFull(string.IsNullOrWhiteSpace(path) ? _defaultInstallRoot : path);
+            Directory.CreateDirectory(target);
+
+            // UseShellExecute открывает папку системным файловым менеджером на всех трёх ОС.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            var hint = this.FindControl<TextBlock>("InstallPathHint")!;
+            hint.Text = $"Не удалось открыть папку: {exception.Message}";
+            hint.IsVisible = true;
+        }
     }
 
     /// <summary>Некорректное разрешение не должно ломать запуск — падаем на значение по умолчанию.</summary>
