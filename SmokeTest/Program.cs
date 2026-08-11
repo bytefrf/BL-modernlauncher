@@ -665,6 +665,16 @@ if (args.Length >= 1 && args[0].Equals("--platform", StringComparison.OrdinalIgn
         Check("значение стабильно между вызовами", description == HostPlatform.OsDescription, "совпало");
     }
 
+    if (HostPlatform.IsLinux)
+    {
+        // Регресс: сначала версия ядра бралась из OSDescription, а он на Linux отдаёт
+        // название дистрибутива — выходило «Linux 24.04.4 · Ubuntu 24.04.4 LTS».
+        var parts = description.Split(" · ", 2, StringSplitOptions.None);
+        Check("версия ядра не повторяет дистрибутив",
+            parts.Length < 2 || !parts[1].Contains(parts[0]["Linux ".Length..], StringComparison.Ordinal),
+            description);
+    }
+
     Console.WriteLine($"PLATFORM_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
     Environment.ExitCode = failed == 0 ? 0 : 1;
     return;

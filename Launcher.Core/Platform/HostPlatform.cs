@@ -91,11 +91,17 @@ public static class HostPlatform
 
     private static string BuildLinuxDescription()
     {
-        // OSDescription на Linux — это вывод uname: «Linux 6.8.0-45-generic #45~22.04.1-Ubuntu SMP …».
-        // Берём только номер ядра: остальное у каждого дистрибутива своё и в отчёт не помещается.
-        var kernel = RuntimeInformation.OSDescription.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var version = kernel.Length > 1 ? kernel[1].Split('-')[0] : Environment.OSVersion.Version.ToString(3);
+        // Версия ядра — из OSVersion: на Linux .NET кладёт туда именно её («Unix 6.8.0.1017»).
+        // ОСТОРОЖНО: RuntimeInformation.OSDescription для этого НЕ годится — на Linux он отдаёт
+        // название дистрибутива («Ubuntu 24.04.4 LTS»), и строка выходила вида
+        // «Linux 24.04.4 · Ubuntu 24.04.4 LTS», то есть без ядра и с повтором. Поймал CI.
+        var version = Environment.OSVersion.Version.ToString(3);
         var distro = ReadOsReleasePrettyName();
+        if (string.IsNullOrWhiteSpace(distro))
+        {
+            // Фолбэк на случай отсутствия /etc/os-release: там как раз лежит что-то читаемое.
+            distro = RuntimeInformation.OSDescription.Trim();
+        }
         return string.IsNullOrWhiteSpace(distro) ? "Linux " + version : $"Linux {version} · {distro}";
     }
 
