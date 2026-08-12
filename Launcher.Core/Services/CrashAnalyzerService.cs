@@ -289,6 +289,31 @@ public static class CrashAnalyzerService
         var hsErrText = ReadTail(hsErrPath);
         var combined = $"{logText}{Environment.NewLine}{stderrText}{Environment.NewLine}{crashText}{Environment.NewLine}{hsErrText}";
 
+        // Игру могли просто закрыть. Minecraft с модами возвращает при этом НЕнулевой код выхода
+        // (саппорт-лог 12.08: лог заканчивается штатным «Stopping!» и выключением модов, крэш-репорта
+        // нет, а игрок получил окно «Краш игры» и отправку бандла). Ложная тревога стоила дорого:
+        // такие сессии составляли заметную часть «unknown» в статистике крашей.
+        if (string.IsNullOrWhiteSpace(crashReportPath) &&
+            string.IsNullOrWhiteSpace(hsErrPath) &&
+            LooksLikeCleanShutdown(logText))
+        {
+            var cleanSummary = "Игра закрыта штатно — это не краш. Minecraft с модами иногда завершается " +
+                               "с ненулевым кодом выхода, хотя мир сохранён и всё в порядке.";
+            return new CrashAnalysisResult(
+                cleanSummary,
+                BuildDetails(exitCode, cleanSummary, latestLogPath, crashReportPath),
+                latestLogPath,
+                crashReportPath,
+                "clean_exit",
+                "clean_exit",
+                string.Empty,
+                false,
+                DescribeExitCode(exitCode),
+                "0x" + unchecked((uint)exitCode).ToString("X8"),
+                string.Empty,
+                false);
+        }
+
         // Крэш-репорт — показание о том, что игру УБИЛО, а latest.log копит ошибки за всю сессию (тот же
         // TooManyRecipeViewers сыплет NPE, не роняя игру). Поэтому сначала разбираем сам крэш-репорт и
         // только если он молчит — весь остальной текст. Иначе причина краша подменяется чужим шумом.
@@ -614,6 +639,48 @@ public static class CrashAnalyzerService
             .EnumerateFiles(crashRoot, "*.txt", SearchOption.TopDirectoryOnly)
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Похоже ли, что игру закрыли штатно: в самом КОНЦЕ лога стоит последовательность выключения.
+    /// </summary>
+    /// <remarks>
+    /// Смотрим именно конец, а не весь текст: «Stopping!» встречается и в логе сессии, которая
+    /// потом упала при выходе. Проверка работает только вместе с «нет крэш-репорта и нет hs_err» —
+    /// то есть игра не оставила ни одного следа падения.
+    /// </remarks>
+    public static bool LooksLikeCleanShutdown(string logText)
+    {
+        if (string.IsNullOrWhiteSpace(logText))
+        {
+            return false;
+        }
+
+        var lines = logText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // 80 строк: между «Stopping!» и последней строкой моды успевают напечатать свои
+        // «shutting down» — у одного игрока таких строк набралось около полусотни.
+        var tail = lines.Length <= 80 ? lines : lines[^80..];
+
+        var stopped = false;
+        var crashed = false;
+        foreach (var line in tail)
+        {
+            if (line.Contains("Minecraft/]: Stopping!", StringComparison.Ordinal) ||
+                line.Contains("]: Stopping!", StringComparison.Ordinal))
+            {
+                stopped = true;
+            }
+
+            // Если после начала выключения посыпались исключения — это уже не тихий выход.
+            if (line.Contains("Exception", StringComparison.Ordinal) ||
+                line.Contains("/FATAL]", StringComparison.Ordinal) ||
+                line.Contains("Problematic frame", StringComparison.Ordinal))
+            {
+                crashed = true;
+            }
+        }
+
+        return stopped && !crashed;
     }
 
     private static string ReadTail(string? path)

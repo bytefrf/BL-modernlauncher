@@ -1439,22 +1439,29 @@ public partial class MainWindow : Window
             UpdateDiscordPresence(DiscordIdleDetails, DiscordIdleState);
             var runtime = DateTime.UtcNow - startedAt;
 
-            // Сессия засчитывается в любом случае — и удачная, и закончившаяся крашем:
-            // от этого зависят время по сборкам и достижения.
-            RecordPlaySession(runtime, crashed: process.ExitCode != 0, startedAtLocal: startedAt.ToLocalTime());
-
             // Analyze читает логи синхронно — уводим с потока интерфейса, чтобы не подвесить окно.
             var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
+
+            // Ненулевой код выхода сам по себе не означает краш: Minecraft с модами так завершается
+            // и при обычном закрытии окна. Крашем считаем только то, где анализатор НЕ увидел
+            // штатного выключения, иначе игрок получает окно разбора после нормальной сессии.
+            var crashed = process.ExitCode != 0 && analysis.Category != "clean_exit";
+
+            // Сессия засчитывается в любом случае — и удачная, и закончившаяся крашем:
+            // от этого зависят время по сборкам и достижения. Но разбор должен пройти РАНЬШЕ,
+            // иначе спокойный выход попадёт в профиль как краш.
+            RecordPlaySession(runtime, crashed: crashed, startedAtLocal: startedAt.ToLocalTime());
 
             _ = TrackTelemetryAsync("game_session_ended", new Dictionary<string, object?>
             {
                 ["launchAttemptId"] = launchAttemptId,
                 ["exitCode"] = process.ExitCode,
                 ["runtimeSeconds"] = (int)runtime.TotalSeconds,
-                ["graceful"] = process.ExitCode == 0
+                ["graceful"] = !crashed,
+                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed
             });
 
-            if (process.ExitCode == 0 && successConfirmed)
+            if (!crashed && successConfirmed)
             {
                 return;
             }

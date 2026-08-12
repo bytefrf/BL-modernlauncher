@@ -539,6 +539,27 @@ if (args.Length >= 1 && args[0].Equals("--crash", StringComparison.OrdinalIgnore
     var wrongArch = AnalyzeLog("dyld: no suitable image found. mach-o, but wrong architecture", 1);
     Expect("macOS: не та архитектура Java", wrongArch.Category == "java_wrong_arch", wrongArch.Category);
 
+    // Обычное закрытие игры. Хвост взят из настоящего бандла (12.08): игрок вышел из игры,
+    // код выхода оказался ненулевым, и лаунчер показал «Краш игры (unknown)» + отправил бандл.
+    const string cleanShutdown =
+        "[12Aug2026 21:32:44.699] [Render thread/INFO] [voicechat/]: [voicechat] Disconnecting voicechat\n" +
+        "[12Aug2026 21:32:45.000] [Render thread/INFO] [ChunkBuilder/]: Stopping worker threads\n" +
+        "[12Aug2026 21:32:50.645] [Render thread/INFO] [net.minecraft.client.Minecraft/]: Stopping!\n" +
+        "[12Aug2026 21:32:50.907] [Render thread/INFO] [AAAParticles/]: Shutdown complete\n" +
+        "[12Aug2026 21:32:50.909] [Render thread/INFO] [FTB Chunks/]: Shutting down map thread";
+    var quit = AnalyzeLog(cleanShutdown, 1);
+    Expect("штатный выход не считается крашем", quit.Category == "clean_exit", quit.Category);
+    Expect("игроку сказано, что это не краш", quit.Summary.Contains("не краш"), quit.Summary);
+
+    // А вот падение ПОСЛЕ начала выключения — уже настоящий краш, глушить его нельзя.
+    var crashAtShutdown = AnalyzeLog(cleanShutdown +
+        "\n[12Aug2026 21:32:51.000] [Render thread/FATAL]: java.lang.NullPointerException at shutdown", 1);
+    Expect("краш при выходе не проглатывается", crashAtShutdown.Category != "clean_exit", crashAtShutdown.Category);
+
+    // Обрыв без следов выключения — тоже не «чистый выход».
+    var killed = AnalyzeLog("[12Aug2026 21:00:00.000] [Render thread/INFO]: Loaded 12 advancements", 1);
+    Expect("обрыв посреди игры не считается штатным выходом", killed.Category != "clean_exit", killed.Category);
+
     // Битый конфиг мода. Текст взят из настоящего крэш-репорта (саппорт-логи 03–10.08:
     // у игрока 17 попыток подряд, игра не запускалась вообще, а причина числилась «unknown»).
     const string configCrash =

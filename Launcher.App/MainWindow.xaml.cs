@@ -2718,9 +2718,17 @@ public partial class MainWindow : Window, IDisposable
             await exitTask;
             UpdateDiscordPresence(DiscordIdleDetails, DiscordIdleState);
             var runtime = DateTime.UtcNow - startedAt;
-            RecordPlaySession(runtime, crashed: process.ExitCode != 0, startedAtLocal: startedAt.ToLocalTime());
             // Analyze читает логи синхронно — уводим с UI-потока, чтобы не подвесить окно.
             var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
+
+            // Ненулевой код выхода сам по себе не означает краш: Minecraft с модами так завершается
+            // и при обычном закрытии окна. Считаем крашем только если анализатор не увидел штатного
+            // выключения — иначе игрок получал окно «Краш игры» после нормальной сессии,
+            // а в статистике копились несуществующие краши.
+            var crashed = process.ExitCode != 0 && analysis.Category != "clean_exit";
+
+            // Разбор идёт ДО записи сессии: иначе в профиль попадёт краш там, где игрок просто вышел.
+            RecordPlaySession(runtime, crashed: crashed, startedAtLocal: startedAt.ToLocalTime());
 
             _ = TrackTelemetryAsync("game_session_ended", new Dictionary<string, object?>
             {
@@ -2729,12 +2737,15 @@ public partial class MainWindow : Window, IDisposable
                 ["runtimeSeconds"] = (int)runtime.TotalSeconds,
                 ["installDurationMs"] = installDurationMs,
                 ["javaSource"] = javaSource,
-                ["graceful"] = process.ExitCode == 0
+                ["graceful"] = !crashed,
+                // Отдельно видно, сколько выходов «чистые, но с ненулевым кодом» — чтобы понимать,
+                // насколько часто это вообще случается.
+                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed
             });
 
             if (successConfirmed)
             {
-                if (process.ExitCode != 0)
+                if (crashed)
                 {
                     _ = TrackTelemetryAsync("game_session_crashed", new Dictionary<string, object?>
                     {
