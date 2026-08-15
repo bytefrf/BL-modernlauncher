@@ -118,6 +118,7 @@ internal static class RuntimeCheck
         effective.DistributionRoot = installRoot;
 
         Console.WriteLine("Запускаю Minecraft...");
+        var startedAt = DateTime.UtcNow;
         var result = await new MinecraftLaunchService().LaunchAsync(effective, launchManifest, settings);
         Console.WriteLine($"Процесс: {result.Process.Id}, {result.FileName}");
 
@@ -137,7 +138,7 @@ internal static class RuntimeCheck
         }
 
         Console.WriteLine($"Игра завершилась, код {result.Process.ExitCode}");
-        var analysis = CrashAnalyzerService.Analyze(installRoot, result.Process.ExitCode);
+        var analysis = CrashAnalyzerService.Analyze(installRoot, result.Process.ExitCode, startedAt);
         Console.WriteLine($"Разбор: [{analysis.Category}] {analysis.Summary}");
         Console.WriteLine($"Код: {analysis.ExitCodeDescription}");
         Console.WriteLine($"Улика: {analysis.Evidence}");

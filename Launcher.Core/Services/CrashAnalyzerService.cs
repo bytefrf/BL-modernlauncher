@@ -173,6 +173,53 @@ public static class CrashAnalyzerService
         ],
         "Известный баг мода просмотра рецептов (TooManyRecipeViewers/JEI) — краш при клике в интерфейсе рецептов. Это баг мода в сборке, не лаунчера. Что делать: не открывай просмотр рецептов до обновления сборки и сообщи в поддержку — исправление приедет с обновлением сборки."),
 
+        // Тот же просмотрщик рецептов, но другая ветка: EMI разбирает свои миксины при отключении
+        // от сервера и ловит ConcurrentModificationException. В саппорт-логах за август 2026 это
+        // 6 бандлов, все числились «unknown»: краш приходил при выходе с сервера по клику мышью.
+        ("mod_recipe_viewer",
+        [
+            "EmiMixinTransformation",
+            "ConcurrentModificationException"
+        ],
+        "Известный баг мода просмотра рецептов (EMI) — краш при отключении от сервера. Это баг мода в сборке, не лаунчера. Что делать: выходи из мира через «Сохранить и выйти», а не закрытием окна, и сообщи в поддержку — исправление приедет с обновлением сборки."),
+
+        // Битый кэш генерируемых ресурспаков: игра ищет папку, которую сама же не дописала
+        // (обычно после аварийного завершения). Разбор идёт ДО missing_file — там та же
+        // NoSuchFileException, но совет «проверить файлы сборки» тут не помогает,
+        // потому что папка не входит в сборку, а создаётся игрой.
+        ("resourcepack_cache",
+        [
+            "dynamic-resource-pack-cache"
+        ],
+        "Повреждён кэш ресурспаков, который игра создаёт сама. Удали папку dynamic-resource-pack-cache в папке со сборкой — игра соберёт её заново при следующем запуске. Мир и постройки не пострадают."),
+
+        // Взаимоисключающие моды оптимизации: игрок доставил sodium к встроенному embeddium
+        // (или наоборот). Оба мода объявляют друг друга несовместимыми, и игра не грузится вовсе.
+        ("mod_conflict",
+        [
+            "is incompatible with",
+            "embeddium"
+        ],
+        "В папке mods оказались сразу embeddium и sodium — это два мода одного назначения, вместе они не работают, и игра не запускается. Удали ЛИШНИЙ мод из папки mods в папке со сборкой (оставь тот, что шёл со сборкой), либо нажми «Проверить файлы» в настройках лаунчера."),
+
+        // Create 6.x с модами-дополнениями от Create 0.5.x: дополнение падает на инициализации,
+        // следом «has failed to load correctly» получает и сам Create. Это композиция сборки,
+        // игрок починить не может — разбор идёт ДО mod_dependency, чтобы не советовать
+        // бесполезную проверку файлов.
+        ("mod_create_incompatible",
+        [
+            "com.simibubi.create.AllBlocks",
+            "failed to load correctly"
+        ],
+        "Дополнение к моду Create не подходит к версии Create в сборке — игра не загружается. Починить на своей стороне нельзя, это состав сборки. Сообщи в поддержку и дождись обновления сборки; пока помогает откат на предыдущую версию сборки в настройках лаунчера."),
+
+        ("mod_create_incompatible",
+        [
+            "createdeco",
+            "failed to load correctly"
+        ],
+        "Мод Create Deco не подходит к версии Create в сборке — игра не загружается. Починить на своей стороне нельзя, это состав сборки. Сообщи в поддержку и дождись обновления сборки; пока помогает откат на предыдущую версию сборки в настройках лаунчера."),
+
         ("mod_minimap",
         [
             "Xaero's Minimap",
@@ -277,12 +324,28 @@ public static class CrashAnalyzerService
         "Конфликт модулей Java между модами. Обычно это дубли или несовместимые jar-файлы.")
     ];
 
-    public static CrashAnalysisResult Analyze(string installRoot, int exitCode)
+    /// <summary>
+    /// Разбирает завершившуюся сессию игры.
+    /// </summary>
+    /// <param name="sessionStartedUtc">
+    /// Момент запуска процесса игры. Нужен, чтобы не принять за причину крэш-репорт от ПРОШЛОЙ сессии:
+    /// файл в <c>crash-reports</c> живёт вечно, а разбор шёл по самому свежему файлу без оглядки на дату.
+    /// В саппорт-логах за август 2026 таких бандлов оказалось 56 из 207 (крэш старше суток, рекорд — 14 дней):
+    /// игрок штатно вышел из игры, а получил окно «Краш игры» с диагнозом двухнедельной давности.
+    /// <c>null</c> означает «время старта неизвестно» — тогда поведение прежнее, любой файл считается свежим.
+    /// </param>
+    public static CrashAnalysisResult Analyze(string installRoot, int exitCode, DateTime? sessionStartedUtc = null)
     {
         var latestLogPath = Path.Combine(installRoot, "logs", "latest.log");
         var stderrLogPath = Path.Combine(installRoot, "logs", "minecraft-stderr.log");
-        var crashReportPath = FindNewestCrashReport(installRoot);
-        var hsErrPath = FindNewestHsErr(installRoot);
+        var freshFrom = sessionStartedUtc is null ? (DateTime?)null : sessionStartedUtc.Value - CrashReportClockSkew;
+        var newestCrashReportPath = FindNewestCrashReport(installRoot);
+        var newestHsErrPath = FindNewestHsErr(installRoot);
+        var crashReportPath = KeepIfFresh(newestCrashReportPath, freshFrom);
+        var hsErrPath = KeepIfFresh(newestHsErrPath, freshFrom);
+        var staleArtifactIgnored =
+            (newestCrashReportPath is not null && crashReportPath is null) ||
+            (newestHsErrPath is not null && hsErrPath is null);
         var logText = ReadTail(latestLogPath);
         var stderrText = ReadTail(stderrLogPath);
         var crashText = ReadTail(crashReportPath);
@@ -311,7 +374,8 @@ public static class CrashAnalyzerService
                 DescribeExitCode(exitCode),
                 "0x" + unchecked((uint)exitCode).ToString("X8"),
                 string.Empty,
-                false);
+                false,
+                staleArtifactIgnored);
         }
 
         // Крэш-репорт — показание о том, что игру УБИЛО, а latest.log копит ошибки за всю сессию (тот же
@@ -335,7 +399,33 @@ public static class CrashAnalyzerService
             DescribeExitCode(exitCode),
             "0x" + unchecked((uint)exitCode).ToString("X8"),
             TelemetrySanitizer.SanitizeMultiline(combined, 2000),
-            !string.IsNullOrWhiteSpace(hsErrPath));
+            !string.IsNullOrWhiteSpace(hsErrPath),
+            staleArtifactIgnored);
+    }
+
+    // Запас на расхождение часов и на то, что crash-reports пишется с точностью до секунды.
+    private static readonly TimeSpan CrashReportClockSkew = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Оставляет файл, только если он изменён ПОСЛЕ начала сессии. Старый крэш-репорт — не улика:
+    /// он остался от прошлого запуска и к текущему завершению отношения не имеет.
+    /// </summary>
+    private static string? KeepIfFresh(string? path, DateTime? freshFromUtc)
+    {
+        if (string.IsNullOrWhiteSpace(path) || freshFromUtc is null)
+        {
+            return path;
+        }
+
+        try
+        {
+            return File.GetLastWriteTimeUtc(path) >= freshFromUtc.Value ? path : null;
+        }
+        catch
+        {
+            // Не смогли прочитать время — считаем файл годным, прежнее поведение.
+            return path;
+        }
     }
 
     /// <summary>
@@ -750,4 +840,6 @@ public sealed record CrashAnalysisResult(
     string ExitCodeDescription,
     string ExitCodeHex,
     string LogTail,
-    bool HasHsErr);
+    bool HasHsErr,
+    // true, если в папке лежал крэш-репорт (или hs_err) от ПРОШЛОЙ сессии и он намеренно не учитывался.
+    bool StaleCrashArtifactIgnored = false);

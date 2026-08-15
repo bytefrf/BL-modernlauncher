@@ -1440,7 +1440,9 @@ public partial class MainWindow : Window
             var runtime = DateTime.UtcNow - startedAt;
 
             // Analyze читает логи синхронно — уводим с потока интерфейса, чтобы не подвесить окно.
-            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
+            // startedAt передаём, чтобы разбор не подобрал крэш-репорт от прошлой сессии:
+            // такой файл лежит в crash-reports неделями и превращал штатный выход в «Краш игры».
+            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode, startedAt));
 
             // Ненулевой код выхода сам по себе не означает краш: Minecraft с модами так завершается
             // и при обычном закрытии окна. Крашем считаем только то, где анализатор НЕ увидел
@@ -1458,7 +1460,9 @@ public partial class MainWindow : Window
                 ["exitCode"] = process.ExitCode,
                 ["runtimeSeconds"] = (int)runtime.TotalSeconds,
                 ["graceful"] = !crashed,
-                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed
+                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed,
+                // Сколько сессий разбиралось бы по чужому крэш-репорту, если бы не проверка свежести.
+                ["staleCrashArtifactIgnored"] = analysis.StaleCrashArtifactIgnored
             });
 
             if (!crashed && successConfirmed)
@@ -1470,14 +1474,14 @@ public partial class MainWindow : Window
             {
                 // Игра успела запуститься и упала позже — разбор нужен так же, как при раннем выходе.
                 _ = TrackTelemetryAsync("game_session_crashed", BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime));
-                _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})");
+                _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})", startedAt);
             }
             else
             {
                 var properties = BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime);
                 properties["stage"] = "early_exit";
                 _ = TrackTelemetryAsync("launch_failed", properties);
-                _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})");
+                _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})", startedAt);
             }
 
             await Dispatcher.UIThread.InvokeAsync(async () =>
@@ -1548,7 +1552,7 @@ public partial class MainWindow : Window
     /// Отправляет пакет логов сразу после краша, не дожидаясь действий игрока: иначе причина
     /// известна только тому, кто нажмёт кнопку. Уважает отключённую телеметрию.
     /// </summary>
-    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle)
+    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle, DateTime? sessionStartedUtc = null)
     {
         if (!_userSettings.TelemetryEnabled)
         {
@@ -1568,7 +1572,8 @@ public partial class MainWindow : Window
                 GetLauncherVersion(),
                 GetTelemetryModpackVersion(),
                 errorTitle,
-                CancellationToken.None);
+                CancellationToken.None,
+                sessionStartedUtc);
 
             await supportLogService.UploadAsync(
                 SupportLogsUrl,

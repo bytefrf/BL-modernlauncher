@@ -584,6 +584,61 @@ if (args.Length >= 1 && args[0].Equals("--crash", StringComparison.OrdinalIgnore
         clientConfig.Summary.Contains("config\\jei-client.toml") && !clientConfig.Summary.Contains("serverconfig"),
         clientConfig.Summary);
 
+    // Крэш-репорт от ПРОШЛОЙ сессии не должен становиться диагнозом текущей. В саппорт-логах
+    // за август 2026 такими были 56 бандлов из 207 (рекорд — файл 14-дневной давности):
+    // игрок штатно выходил из игры, а получал окно «Краш игры» с чужой причиной и отправку бандла.
+    var staleRoot = Path.Combine(sandbox, "crash-reports");
+    Directory.CreateDirectory(staleRoot);
+    var staleReport = Path.Combine(staleRoot, "crash-2026-08-03_10.25.50-client.txt");
+    File.WriteAllText(staleReport,
+        "---- Minecraft Crash Report ----\nDescription: mouseClicked event handler\n" +
+        "java.lang.ExceptionInInitializerError\n\tat dev.emi.emi.mixinsupport.EmiMixinTransformation.preach\n" +
+        "Caused by: java.util.ConcurrentModificationException");
+    File.SetLastWriteTimeUtc(staleReport, DateTime.UtcNow.AddDays(-6));
+
+    File.WriteAllText(Path.Combine(sandbox, "logs", "latest.log"), cleanShutdown);
+    var staleIgnored = CrashAnalyzerService.Analyze(sandbox, 1, DateTime.UtcNow.AddMinutes(-30));
+    Expect("старый крэш-репорт не выдаётся за причину", staleIgnored.Category == "clean_exit", staleIgnored.Category);
+    Expect("старый крэш-репорт отмечен в телеметрии", staleIgnored.StaleCrashArtifactIgnored, "StaleCrashArtifactIgnored");
+    Expect("путь к старому крэш-репорту не показан", string.IsNullOrEmpty(staleIgnored.CrashReportPath), staleIgnored.CrashReportPath ?? "<null>");
+
+    // Свежий файл при этом обязан учитываться — иначе проверка съест настоящие краши.
+    File.SetLastWriteTimeUtc(staleReport, DateTime.UtcNow);
+    var freshCounts = CrashAnalyzerService.Analyze(sandbox, 1, DateTime.UtcNow.AddMinutes(-30));
+    Expect("свежий крэш-репорт учитывается", freshCounts.Category == "mod_recipe_viewer", freshCounts.Category);
+    Expect("EMI при отключении распознан", freshCounts.Summary.Contains("EMI"), freshCounts.Summary);
+
+    // Без времени старта поведение прежнее: любой файл считается уликой.
+    var noSessionTime = CrashAnalyzerService.Analyze(sandbox, 1);
+    Expect("без времени старта разбор не сломан", noSessionTime.Category == "mod_recipe_viewer", noSessionTime.Category);
+    Directory.Delete(staleRoot, true);
+
+    // Битый кэш генерируемых ресурспаков (саппорт-лог 15.08): совет «проверь файлы» тут бесполезен,
+    // папку создаёт сама игра.
+    var packCache = AnalyzeLog(
+        "java.io.UncheckedIOException: java.nio.file.NoSuchFileException: " +
+        "C:\\Users\\Player\\AppData\\Roaming\\BL-modern\\stoneblock4\\dynamic-resource-pack-cache\\" +
+        "amendments-generated_pack\\assets\\amendments\\models\\block\\signs", 1);
+    Expect("битый кэш ресурспаков распознан", packCache.Category == "resourcepack_cache", packCache.Category);
+    Expect("названа папка для удаления",
+        packCache.Summary.Contains("dynamic-resource-pack-cache"), packCache.Summary);
+
+    // embeddium + sodium в одной папке mods: игрок доставил второй мод оптимизации.
+    var sodiumConflict = AnalyzeLog(
+        "Mod file: mods/embeddium-1.0.15+mc1.21.1.jar\n" +
+        "Failure message: Mod embeddium is incompatible with sodium 0 or above", 1);
+    Expect("конфликт embeddium/sodium распознан", sodiumConflict.Category == "mod_conflict", sodiumConflict.Category);
+
+    // Дополнения к Create от версии 0.5.x на Create 6.x: игра не грузится, игрок починить не может.
+    var createDeco = AnalyzeLog(
+        "Mod File: mods/createdeco-2.0.3-1.20.1-forge.jar\n" +
+        "Failure message: Create Deco (createdeco) has failed to load correctly\n" +
+        "Caused by 0: java.lang.ExceptionInInitializerError", 1);
+    Expect("несовместимое дополнение Create распознано",
+        createDeco.Category == "mod_create_incompatible", createDeco.Category);
+    Expect("сказано, что чинится обновлением сборки",
+        createDeco.Summary.Contains("сборки"), createDeco.Summary);
+
     // Регресс: windows-паттерны продолжают работать.
     var nvidiaWindows = AnalyzeLog("# C  [nvoglv64.dll+0x8a1b2]", unchecked((int)0xC0000005));
     Expect("NVIDIA на Windows не сломался", nvidiaWindows.Category == "graphics_driver", nvidiaWindows.Category);

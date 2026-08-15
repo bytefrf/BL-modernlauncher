@@ -22,7 +22,8 @@ public sealed class SupportLogService(HttpClient httpClient)
         string launcherVersion,
         string modpackVersion,
         string errorTitle,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? sessionStartedUtc = null)
     {
         installRoot = string.IsNullOrWhiteSpace(installRoot) || installRoot == "-"
             ? Path.Combine(LauncherPaths.GetApplicationDataRoot(), "ForgeLauncher")
@@ -74,9 +75,12 @@ public sealed class SupportLogService(HttpClient httpClient)
         AddFileEntry(archive, Path.Combine(gameLogRoot, "minecraft-stderr.log"), "minecraft/minecraft-stderr.log", MaxTextLogBytes, includedFiles);
         AddFileEntry(archive, Path.Combine(gameLogRoot, "minecraft-diagnostic.stderr.log"), "minecraft/minecraft-diagnostic.stderr.log", MaxTextLogBytes, includedFiles);
         AddFileEntry(archive, Path.Combine(gameLogRoot, "minecraft-diagnostic.stdout.log"), "minecraft/minecraft-diagnostic.stdout.log", MaxTextLogBytes, includedFiles);
-        AddLatestMatchingFile(archive, Path.Combine(installRoot, "crash-reports"), "crash-*.txt", "minecraft/crash-reports", MaxCrashReportBytes, includedFiles);
+        // Крэш-репорт от ПРОШЛОЙ сессии кладём в отдельную папку. Файл в crash-reports живёт вечно,
+        // и при разборе бандлов он выглядел уликой текущего запуска: за август 2026 таким оказался
+        // каждый четвёртый бандл с крэш-репортом, вплоть до файлов двухнедельной давности.
+        AddLatestMatchingFile(archive, Path.Combine(installRoot, "crash-reports"), "crash-*.txt", "minecraft/crash-reports", MaxCrashReportBytes, includedFiles, sessionStartedUtc, "minecraft/crash-reports-old");
         // Нативные краши (0xC0000409 и т.п.) оставляют дамп JVM в корне папки установки.
-        AddLatestMatchingFile(archive, installRoot, "hs_err_pid*.log", "minecraft/hs_err", MaxCrashReportBytes, includedFiles);
+        AddLatestMatchingFile(archive, installRoot, "hs_err_pid*.log", "minecraft/hs_err", MaxCrashReportBytes, includedFiles, sessionStartedUtc, "minecraft/hs_err-old");
 
         return new SupportLogPackage(packagePath, includedFiles.Count);
     }
@@ -163,7 +167,9 @@ public sealed class SupportLogService(HttpClient httpClient)
         string pattern,
         string entryDirectory,
         long maxBytes,
-        List<string> includedFiles)
+        List<string> includedFiles,
+        DateTime? sessionStartedUtc = null,
+        string? staleEntryDirectory = null)
     {
         if (!Directory.Exists(directory))
         {
@@ -180,7 +186,13 @@ public sealed class SupportLogService(HttpClient httpClient)
             return;
         }
 
-        AddFileEntry(archive, file.FullName, $"{entryDirectory}/{file.Name}", maxBytes, includedFiles);
+        // Тот же запас на расхождение часов, что и в CrashAnalyzerService.
+        var isStale = sessionStartedUtc is not null &&
+                      staleEntryDirectory is not null &&
+                      file.LastWriteTimeUtc < sessionStartedUtc.Value - TimeSpan.FromMinutes(2);
+        var targetDirectory = isStale ? staleEntryDirectory! : entryDirectory;
+
+        AddFileEntry(archive, file.FullName, $"{targetDirectory}/{file.Name}", maxBytes, includedFiles);
     }
 
     private static void AddFileEntry(

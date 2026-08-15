@@ -1363,7 +1363,7 @@ public partial class MainWindow : Window, IDisposable
     // Авто-отправка крэш-бандла без участия игрока: при краше игры сам собирает пакет логов
     // (latest.log/stderr/hs_err/crash-report) и шлёт на сервер. Так причину видно даже если игрок
     // не нажмёт «Отправить в поддержку». Уважает отключённую телеметрию.
-    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle)
+    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle, DateTime? sessionStartedUtc = null)
     {
         if (!_userSettings.TelemetryEnabled)
         {
@@ -1385,7 +1385,8 @@ public partial class MainWindow : Window, IDisposable
                 launcherVersion,
                 modpackVersion,
                 errorTitle,
-                CancellationToken.None);
+                CancellationToken.None,
+                sessionStartedUtc);
 
             var upload = await _supportLogService.UploadAsync(
                 SupportLogsUrl,
@@ -2719,7 +2720,9 @@ public partial class MainWindow : Window, IDisposable
             UpdateDiscordPresence(DiscordIdleDetails, DiscordIdleState);
             var runtime = DateTime.UtcNow - startedAt;
             // Analyze читает логи синхронно — уводим с UI-потока, чтобы не подвесить окно.
-            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode));
+            // startedAt передаём, чтобы разбор не подобрал крэш-репорт от прошлой сессии:
+            // такой файл лежит в crash-reports неделями и превращал штатный выход в «Краш игры».
+            var analysis = await Task.Run(() => CrashAnalyzerService.Analyze(installRoot, process.ExitCode, startedAt));
 
             // Ненулевой код выхода сам по себе не означает краш: Minecraft с модами так завершается
             // и при обычном закрытии окна. Считаем крашем только если анализатор не увидел штатного
@@ -2740,7 +2743,9 @@ public partial class MainWindow : Window, IDisposable
                 ["graceful"] = !crashed,
                 // Отдельно видно, сколько выходов «чистые, но с ненулевым кодом» — чтобы понимать,
                 // насколько часто это вообще случается.
-                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed
+                ["cleanExitNonZeroCode"] = process.ExitCode != 0 && !crashed,
+                // Сколько сессий разбиралось бы по чужому крэш-репорту, если бы не проверка свежести.
+                ["staleCrashArtifactIgnored"] = analysis.StaleCrashArtifactIgnored
             });
 
             if (successConfirmed)
@@ -2763,7 +2768,7 @@ public partial class MainWindow : Window, IDisposable
                         ["logTail"] = analysis.LogTail
                     });
 
-                    _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})");
+                    _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})", startedAt);
 
                     // Игра успела запуститься, но потом упала — пользователю тоже нужен анализ краша.
                     await Dispatcher.InvokeAsync(() =>
@@ -2796,7 +2801,7 @@ public partial class MainWindow : Window, IDisposable
                 ["javaSource"] = javaSource
             });
 
-            _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})");
+            _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})", startedAt);
 
             await Dispatcher.InvokeAsync(() =>
             {
