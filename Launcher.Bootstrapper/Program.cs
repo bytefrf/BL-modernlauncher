@@ -56,6 +56,23 @@ internal static class Program
             return;
         }
 
+        // Показать окно установки и выйти, ничего не устанавливая. Нужно, чтобы проверять вёрстку
+        // окна и галочку ярлыка, не проходя установку целиком (после неё папка сохраняется,
+        // и окно больше не показывается).
+        if (args.Contains("--preview-install-dialog", StringComparer.OrdinalIgnoreCase))
+        {
+            var preview = PromptInstallDirectory(
+                configuration.LauncherName,
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    SanitizeFolderName(configuration.LauncherName)));
+            WinForms.MessageBox.Show(
+                $"Папка: {(string.IsNullOrEmpty(preview.Directory) ? "<отмена>" : preview.Directory)}\n" +
+                $"Ярлык на рабочем столе: {(preview.CreateDesktopShortcut ? "да" : "нет")}",
+                "Предпросмотр окна установки");
+            return;
+        }
+
         if (!TryAcquireSingleInstanceLock())
         {
             return;
@@ -66,7 +83,7 @@ internal static class Program
         // уходит на поток пула (не STA), и COM-диалог падает с ThreadStateException.
         // Поэтому выбор папки делаем ДО любого await, пока мы гарантированно на STA-потоке,
         // а проверку Visual C++ (у неё внутри есть await) — уже после.
-        var launcherInstallDirectory = EnsureLauncherInstallDirectory(stateStore, configuration);
+        var (launcherInstallDirectory, createDesktopShortcut) = EnsureLauncherInstallDirectory(stateStore, configuration);
         Directory.CreateDirectory(launcherInstallDirectory);
 
         await EnsureVisualCppRuntimeAsync(httpClient);
@@ -78,6 +95,13 @@ internal static class Program
         if (!File.Exists(launcherPath))
         {
             throw new FileNotFoundException($"Launcher executable was not found: {launcherPath}");
+        }
+
+        // Ярлык ставим только после успешной установки: иначе на рабочем столе останется значок,
+        // ведущий в незавершённую установку.
+        if (createDesktopShortcut)
+        {
+            TryCreateDesktopShortcut(configuration.LauncherName, launcherInstallDirectory);
         }
 
         var launchArguments = string.Join(" ", args.Select(QuoteIfNeeded));
@@ -341,35 +365,142 @@ internal static class Program
         }
     }
 
-    private static string EnsureLauncherInstallDirectory(BootstrapperStateStore stateStore, LauncherConfiguration configuration)
+    /// <summary>
+    /// Возвращает папку установки и, для ПЕРВОЙ установки, ответ игрока про ярлык на рабочем столе.
+    /// При повторных запусках папка уже сохранена, окно не показывается и ярлык не трогаем.
+    /// </summary>
+    private static (string Directory, bool CreateDesktopShortcut) EnsureLauncherInstallDirectory(
+        BootstrapperStateStore stateStore,
+        LauncherConfiguration configuration)
     {
         var existing = stateStore.LoadInstallDirectory();
         if (!string.IsNullOrWhiteSpace(existing))
         {
-            return existing;
+            return (existing, false);
         }
 
         var defaultDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             SanitizeFolderName(configuration.LauncherName));
 
-        var selectedDirectory = PromptInstallDirectory(configuration.LauncherName, defaultDirectory);
-        if (string.IsNullOrWhiteSpace(selectedDirectory))
+        var choice = PromptInstallDirectory(configuration.LauncherName, defaultDirectory);
+        if (string.IsNullOrWhiteSpace(choice.Directory))
         {
             throw new OperationCanceledException("Папка установки лаунчера не выбрана.");
         }
 
-        var fullPath = Path.GetFullPath(selectedDirectory);
+        var fullPath = Path.GetFullPath(choice.Directory);
         stateStore.SaveInstallDirectory(fullPath);
-        return fullPath;
+        return (fullPath, choice.CreateDesktopShortcut);
     }
 
-    private static string PromptInstallDirectory(string launcherName, string defaultDirectory)
+    private static (string Directory, bool CreateDesktopShortcut) PromptInstallDirectory(string launcherName, string defaultDirectory)
     {
         using var form = new InstallDirectoryForm(launcherName, defaultDirectory);
         return form.ShowDialog() == WinForms.DialogResult.OK
-            ? form.SelectedDirectory
-            : string.Empty;
+            ? (form.SelectedDirectory, form.CreateDesktopShortcut)
+            : (string.Empty, false);
+    }
+
+    /// <summary>
+    /// Кладёт на рабочий стол ярлык на bootstrapper — именно он проверяет обновления и запускает игру.
+    /// Ярлык на Launcher.App.exe напрямую увёл бы игрока мимо обновлений.
+    /// </summary>
+    /// <remarks>
+    /// Сам bootstrapper обычно скачан в «Загрузки», а эту папку чистят. Поэтому сначала копируем его
+    /// в папку установки и ссылаемся на копию — иначе ярлык однажды перестанет работать.
+    /// Ошибки намеренно проглатываются: ярлык — удобство, из-за него установка падать не должна.
+    /// </remarks>
+    private static void TryCreateDesktopShortcut(string launcherName, string installDirectory)
+    {
+        try
+        {
+            var currentExe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(currentExe) || !File.Exists(currentExe))
+            {
+                return;
+            }
+
+            var target = currentExe;
+            var localCopy = Path.Combine(installDirectory, Path.GetFileName(currentExe));
+            if (!string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(localCopy), StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    File.Copy(currentExe, localCopy, overwrite: true);
+                    target = localCopy;
+                }
+                catch
+                {
+                    // Копия не удалась (файл занят, нет прав) — ярлык всё равно нужен, ведём на исходный файл.
+                }
+            }
+            else
+            {
+                target = localCopy;
+            }
+
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
+            {
+                return;
+            }
+
+            var shortcutPath = Path.Combine(desktop, SanitizeFolderName(launcherName) + ".lnk");
+
+            // WScript.Shell через позднее связывание: единственный способ собрать .lnk без сторонних
+            // пакетов и без ручной сборки бинарного формата ярлыка.
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null)
+            {
+                return;
+            }
+
+            var shell = Activator.CreateInstance(shellType);
+            if (shell is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var shortcut = shellType.InvokeMember(
+                    "CreateShortcut",
+                    System.Reflection.BindingFlags.InvokeMethod,
+                    null,
+                    shell,
+                    [shortcutPath]);
+                if (shortcut is null)
+                {
+                    return;
+                }
+
+                var shortcutType = shortcut.GetType();
+                void Set(string property, string value) => shortcutType.InvokeMember(
+                    property,
+                    System.Reflection.BindingFlags.SetProperty,
+                    null,
+                    shortcut,
+                    [value]);
+
+                Set("TargetPath", target);
+                Set("WorkingDirectory", Path.GetDirectoryName(target) ?? installDirectory);
+                Set("IconLocation", target + ",0");
+                Set("Description", launcherName);
+                shortcutType.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+            }
+            finally
+            {
+                if (System.Runtime.InteropServices.Marshal.IsComObject(shell))
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
+                }
+            }
+        }
+        catch
+        {
+            // Ярлык — удобство, а не условие установки.
+        }
     }
 
     private static async Task EnsureLauncherInstalledAsync(HttpClient httpClient, LauncherConfiguration configuration, string installDirectory, string bootstrapperDirectory)
@@ -1076,6 +1207,7 @@ sealed class InstallDirectoryForm : WinForms.Form
 {
     private readonly WinForms.TextBox _pathTextBox;
     private readonly WinForms.Button _continueButton;
+    private readonly WinForms.CheckBox _shortcutCheckBox;
 
     public InstallDirectoryForm(string launcherName, string defaultDirectory)
     {
@@ -1087,7 +1219,7 @@ sealed class InstallDirectoryForm : WinForms.Form
         ShowInTaskbar = true;
         BackColor = System.Drawing.Color.FromArgb(30, 23, 18);
         ForeColor = System.Drawing.Color.FromArgb(255, 247, 234);
-        ClientSize = new System.Drawing.Size(620, 220);
+        ClientSize = new System.Drawing.Size(620, 258);
 
         var titleLabel = new WinForms.Label
         {
@@ -1141,10 +1273,28 @@ sealed class InstallDirectoryForm : WinForms.Form
         browseButton.FlatAppearance.BorderSize = 1;
         browseButton.Click += (_, _) => BrowseForFolder();
 
+        // Ярлык предлагаем сразу при установке: сам bootstrapper обычно лежит в «Загрузках»,
+        // и без ярлыка игрок ищет, чем запускать игру, а часть игроков просто ставит лаунчер заново.
+        _shortcutCheckBox = new WinForms.CheckBox
+        {
+            Left = 20,
+            Top = 142,
+            Width = 400,
+            Height = 26,
+            Checked = true,
+            FlatStyle = WinForms.FlatStyle.Flat,
+            Font = new System.Drawing.Font("Segoe UI", 9.5f),
+            // Тот же цвет, что у остального текста: приглушённый оттенок подсказки
+            // на тёмном фоне читается как отключённый пункт.
+            ForeColor = ForeColor,
+            Text = "Создать ярлык на рабочем столе"
+        };
+        _shortcutCheckBox.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(175, 113, 73);
+
         _continueButton = new WinForms.Button
         {
             Left = 360,
-            Top = 162,
+            Top = 200,
             Width = 115,
             Height = 38,
             Text = "Продолжить",
@@ -1159,7 +1309,7 @@ sealed class InstallDirectoryForm : WinForms.Form
         var cancelButton = new WinForms.Button
         {
             Left = 485,
-            Top = 162,
+            Top = 200,
             Width = 115,
             Height = 38,
             Text = "Отмена",
@@ -1178,11 +1328,14 @@ sealed class InstallDirectoryForm : WinForms.Form
         Controls.Add(hintLabel);
         Controls.Add(_pathTextBox);
         Controls.Add(browseButton);
+        Controls.Add(_shortcutCheckBox);
         Controls.Add(_continueButton);
         Controls.Add(cancelButton);
     }
 
     public string SelectedDirectory => _pathTextBox.Text.Trim();
+
+    public bool CreateDesktopShortcut => _shortcutCheckBox.Checked;
 
     private void BrowseForFolder()
     {
