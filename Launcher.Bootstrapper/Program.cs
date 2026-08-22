@@ -689,9 +689,11 @@ internal static class Program
                 var localVersion = ResolveInstalledLauncherVersion(launcherPath);
                 if (IsRemoteVersionNewer(localVersion, availableUpdate.Version))
                 {
+                    // allowDefer: лаунчер уже установлен и игрок может играть на текущей версии,
+                    // поэтому занятые файлы не должны мешать запуску.
                     await RunWithProgressAsync(
                         "Обновление лаунчера",
-                        progress => DownloadAndExtractLauncherPackageAsync(httpClient, availableUpdate, installDirectory, progress));
+                        progress => DownloadAndExtractLauncherPackageAsync(httpClient, availableUpdate, installDirectory, progress, allowDefer: true));
                 }
             }
 
@@ -795,22 +797,74 @@ internal static class Program
         }
     }
 
-    private static async Task DownloadAndExtractLauncherPackageAsync(HttpClient httpClient, ResolvedLauncherUpdate launcherUpdate, string installDirectory, IProgress<BootstrapProgress>? progress = null)
+    /// <summary>
+    /// Скачивает и раскладывает пакет лаунчера. Возвращает false, если файлы заняты и обновление
+    /// пришлось отложить на следующий запуск — это НЕ ошибка.
+    /// </summary>
+    private static async Task<bool> DownloadAndExtractLauncherPackageAsync(HttpClient httpClient, ResolvedLauncherUpdate launcherUpdate, string installDirectory, IProgress<BootstrapProgress>? progress = null, bool allowDefer = false)
     {
         var tempZip = Path.Combine(Path.GetTempPath(), $"launcher-bootstrap-{Guid.NewGuid():N}.zip");
+        var deferred = false;
         try
         {
             await DownloadLauncherPackageAsync(httpClient, launcherUpdate, tempZip, progress);
             progress?.Report(new BootstrapProgress(-1, "Распаковка файлов лаунчера..."));
-            ZipFile.ExtractToDirectory(tempZip, installDirectory, true);
+
+            try
+            {
+                ZipFile.ExtractToDirectory(tempZip, installDirectory, true);
+            }
+            catch (Exception exception) when (allowDefer && exception is IOException or UnauthorizedAccessException)
+            {
+                // Launcher.App.exe запущен (свёрнут в трей, открыт второй копией бутстраппера) и
+                // потому заблокирован. Раньше это валило бутстраппер целиком: игрок видел окно
+                // ошибки и НЕ мог играть вообще. По саппорт-логам это самая частая поломка
+                // бутстраппера, и вся она приходится на дни выкладок.
+                // Теперь пакет уезжает в .launcher-update, откуда ApplyPendingLauncherUpdate
+                // разложит его при следующем холодном запуске, а сейчас стартует текущая версия.
+                deferred = true;
+                StagePendingLauncherUpdate(installDirectory, tempZip, launcherUpdate);
+                progress?.Report(new BootstrapProgress(100, "Обновление применится при следующем запуске..."));
+                return false;
+            }
+
             progress?.Report(new BootstrapProgress(100, "Готово, запуск лаунчера..."));
+            return true;
         }
         finally
         {
-            if (File.Exists(tempZip))
+            // При отложенном обновлении zip уже переехал в .launcher-update — удалять нечего.
+            if (!deferred && File.Exists(tempZip))
             {
                 File.Delete(tempZip);
             }
+        }
+    }
+
+    /// <summary>
+    /// Перекладывает уже скачанный пакет в <c>.launcher-update</c> в том же формате, что и фоновая
+    /// докачка: zip + версия + sha256. Второй раз качать 80 МБ не нужно.
+    /// </summary>
+    private static void StagePendingLauncherUpdate(string installDirectory, string sourceZip, ResolvedLauncherUpdate launcherUpdate)
+    {
+        try
+        {
+            var pendingRoot = Path.Combine(installDirectory, ".launcher-update");
+            Directory.CreateDirectory(pendingRoot);
+            var zipPath = Path.Combine(pendingRoot, "launcher-update.zip");
+
+            if (File.Exists(zipPath))
+            {
+                File.Delete(zipPath);
+            }
+
+            File.Move(sourceZip, zipPath);
+            File.WriteAllText(Path.Combine(pendingRoot, "launcher-update.version"), launcherUpdate.Version);
+            File.WriteAllText(Path.Combine(pendingRoot, "launcher-update.sha256"), launcherUpdate.Sha256 ?? string.Empty);
+        }
+        catch
+        {
+            // Отложить не вышло — не беда: обновление просто произойдёт в следующий раз обычным путём.
         }
     }
 
