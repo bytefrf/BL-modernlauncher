@@ -844,6 +844,36 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// Офлайн-состояние: SmokeTest --offline
+if (args.Length >= 1 && args[0].Equals("--offline", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var online = OfflineStateEvaluator.Evaluate(ModpackManifestSource.Remote, modpackInstalled: true);
+    Check("со связью полосу не показываем", !online.IsOffline && online.Message.Length == 0, "тишина");
+
+    var cachedInstalled = OfflineStateEvaluator.Evaluate(ModpackManifestSource.Cached, modpackInstalled: true);
+    Check("кэш + установленная сборка = играть можно", cachedInstalled is { IsOffline: true, CanPlay: true }, cachedInstalled.Message);
+    Check("сказано, что данные сохранённые", cachedInstalled.Message.Contains("сохранённые", StringComparison.Ordinal), "источник назван");
+
+    var cachedEmpty = OfflineStateEvaluator.Evaluate(ModpackManifestSource.Cached, modpackInstalled: false);
+    Check("без сборки играть нельзя", cachedEmpty is { IsOffline: true, CanPlay: false }, cachedEmpty.Message);
+    Check("сказано, что делать", cachedEmpty.Message.Contains("VPN", StringComparison.Ordinal), "совет есть");
+
+    var embedded = OfflineStateEvaluator.Evaluate(ModpackManifestSource.Embedded, modpackInstalled: true);
+    Check("вшитый резерв назван своим именем", embedded.Message.Contains("встроенный", StringComparison.Ordinal), embedded.Message);
+
+    Console.WriteLine($"OFFLINE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // График игровых сессий: SmokeTest --timeline
 if (args.Length >= 1 && args[0].Equals("--timeline", StringComparison.OrdinalIgnoreCase))
 {

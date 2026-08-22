@@ -406,6 +406,28 @@ public partial class MainWindow : Window
         SetStatus(resolution.Source == ModpackManifestSource.Remote
             ? "Сборка загружена"
             : $"{resolution.Reason} — используется сохранённый манифест");
+        ShowOfflineBanner(resolution.Source);
+    }
+
+    /// <summary>
+    /// Прямо говорит игроку, что связи с сайтом нет и чем это грозит. Паритет с WPF-версией:
+    /// при установленной сборке играть можно, ставить с нуля — нет.
+    /// </summary>
+    private void ShowOfflineBanner(ModpackManifestSource source)
+    {
+        var banner = this.FindControl<Border>("OfflineBanner");
+        var text = this.FindControl<TextBlock>("OfflineBannerText");
+        if (banner is null || text is null || _configuration is null)
+        {
+            return;
+        }
+
+        var installRoot = ModpackCatalogLogic.ResolveEffectiveInstallRoot(_configuration, _modpackManifest, _userSettings);
+        var installed = File.Exists(Path.Combine(installRoot, ".launcher", "modpack.version"));
+        var state = OfflineStateEvaluator.Evaluate(source, installed);
+
+        banner.IsVisible = state.IsOffline;
+        text.Text = state.Message;
     }
 
     /// <summary>

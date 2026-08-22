@@ -763,6 +763,8 @@ public partial class MainWindow : Window, IDisposable
                     : "Не удалось подключиться к сайту. Лаунчер использует последний сохраненный манифест или встроенный резерв.");
             }
 
+            ShowOfflineBanner(resolution.Source);
+
             Title = _modpackManifest.Launcher.Title;
             ServerTitleTextBlock.Text = _modpackManifest.Launcher.Title;
             RefreshServerStatsInBackground(showLoading: true);
@@ -2179,6 +2181,24 @@ public partial class MainWindow : Window, IDisposable
                 BarOpacity = day.HasPlay ? 1.0 : 0.25
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Прямо говорит игроку, что связи с сайтом нет и чем это грозит. Играть при установленной
+    /// сборке можно, ставить с нуля — нет, и это разные сообщения.
+    /// </summary>
+    private void ShowOfflineBanner(ModpackManifestSource source)
+    {
+        if (OfflineBanner is null || OfflineBannerText is null)
+        {
+            return;
+        }
+
+        var installed = File.Exists(GetArchiveVersionMarkerPath());
+        var state = OfflineStateEvaluator.Evaluate(source, installed);
+
+        OfflineBanner.Visibility = state.IsOffline ? Visibility.Visible : Visibility.Collapsed;
+        OfflineBannerText.Text = state.Message;
     }
 
     private void UpdateProfileAvatar()

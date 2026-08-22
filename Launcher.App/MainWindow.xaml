@@ -629,6 +629,26 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- ОФЛАЙН-ПОЛОСА: сайт недоступен, работаем на сохранённых данных.
+                         Раньше об этом не говорилось ничего, и устаревшие данные выглядели
+                         как случайный сбой. -->
+                    <Border x:Name="OfflineBanner" Grid.Row="2" VerticalAlignment="Top" Margin="0,0,0,12"
+                            CornerRadius="14" Padding="14,10" Visibility="Collapsed" Panel.ZIndex="5"
+                            Background="{DynamicResource CardAltBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" FontSize="15"
+                                       Foreground="{DynamicResource AccentBrush}" Text="⚠" />
+                            <TextBlock x:Name="OfflineBannerText" Grid.Column="2" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextBrush}" />
+                        </Grid>
+                    </Border>
+
                     <!-- ТЕЛО: вкладки «Главная» и «Личный кабинет» -->
                     <Grid Grid.Row="2">
                       <Grid x:Name="HomePage">

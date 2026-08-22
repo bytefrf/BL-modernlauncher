@@ -196,6 +196,19 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- ОФЛАЙН-ПОЛОСА: паритет с WPF-версией. -->
+                    <Border x:Name="OfflineBanner" Grid.Row="2" VerticalAlignment="Top" Margin="0,0,0,12"
+                            CornerRadius="14" Padding="14,10" IsVisible="False" ZIndex="5"
+                            Background="{DynamicResource CardAltBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1">
+                        <Grid ColumnDefinitions="Auto,10,*">
+                            <TextBlock VerticalAlignment="Center" FontSize="15"
+                                       Foreground="{DynamicResource AccentBrush}" Text="⚠" />
+                            <TextBlock x:Name="OfflineBannerText" Grid.Column="2" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextBrush}" />
+                        </Grid>
+                    </Border>
+
     <!-- ВКЛАДКА «ГЛАВНАЯ»: слева серверы, справа новости.
          Колонки резиновые, как в WPF-версии: при фиксированной ширине на широких окнах
          между блоками появлялась пустота, а на узких всё сжималось. -->
