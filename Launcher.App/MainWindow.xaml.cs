@@ -483,32 +483,13 @@ public partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Размер окна подбирается ПЛАВНО от рабочей области, а не ступенями. Раньше было четыре
-    /// фиксированных пресета, из-за чего на разных мониторах интерфейс заметно «прыгал» и
-    /// появлялись пустоты. Пропорции держим близко к 16:9 и вписываемся в рабочую область.
+    /// Арифметика вынесена в <see cref="WindowSizeCalculator"/>: она была продублирована в WPF и
+    /// в Avalonia и не покрывалась офлайн-тестом. Здесь остаётся только перевод в тип фреймворка.
     /// </summary>
     private static System.Windows.Size SelectWindowSize(double workWidth, double workHeight)
     {
-        const double minWidth = 980;
-        const double minHeight = 560;
-        const double maxWidth = 1440;
-        const double maxHeight = 810;
-
-        // Оставляем поля вокруг окна, чтобы оно не липло к краям и к панели задач.
-        var availableWidth = Math.Max(minWidth, workWidth - 80);
-        var availableHeight = Math.Max(minHeight, workHeight - 80);
-
-        var width = Math.Clamp(workWidth * 0.78, minWidth, maxWidth);
-        var height = Math.Clamp(width * 9 / 16, minHeight, maxHeight);
-
-        // Если по высоте не влезли — пересчитываем ширину от высоты, сохраняя пропорции.
-        if (height > availableHeight)
-        {
-            height = availableHeight;
-            width = Math.Clamp(height * 16 / 9, minWidth, maxWidth);
-        }
-
-        return new System.Windows.Size(Math.Min(width, availableWidth), Math.Min(height, availableHeight));
+        var size = WindowSizeCalculator.Select(workWidth, workHeight);
+        return new System.Windows.Size(size.Width, size.Height);
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-using System.Net.Sockets;
+﻿using System.Net.Sockets;
 using System.Text.Json;
 using Launcher.App;
 using Launcher.App.Configuration;
@@ -539,6 +539,16 @@ if (args.Length >= 1 && args[0].Equals("--crash", StringComparison.OrdinalIgnore
     var wrongArch = AnalyzeLog("dyld: no suitable image found. mach-o, but wrong architecture", 1);
     Expect("macOS: не та архитектура Java", wrongArch.Category == "java_wrong_arch", wrongArch.Category);
 
+    // Версия Java: в совете должны стоять РЕАЛЬНЫЕ версии из ошибки, а не зашитая «Java 17».
+    // Живой случай — GregTech Odyssey: ядро пака собрано под Java 21 (class file version 65).
+    var javaVersion = AnalyzeLog("Exception in thread \"main\" java.lang.UnsupportedClassVersionError: " +
+        "net/minecraft/SharedConstants has been compiled by a more recent version of the Java Runtime " +
+        "(class file version 65.0), this version of the Java Runtime only recognizes class file versions up to 61.0", 1);
+    Expect("неверная версия Java распознана", javaVersion.Category == "java_version", javaVersion.Category);
+    Expect("названа нужная версия (21), а не зашитая 17",
+        javaVersion.Summary.Contains("нужна Java 21") && javaVersion.Summary.Contains("запущена на Java 17"),
+        javaVersion.Summary);
+
     // Обычное закрытие игры. Хвост взят из настоящего бандла (12.08): игрок вышел из игры,
     // код выхода оказался ненулевым, и лаунчер показал «Краш игры (unknown)» + отправил бандл.
     const string cleanShutdown =
@@ -831,6 +841,147 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
 
     Console.WriteLine($"DISK_SPACE_RESULT={(bad == 0 ? "PASS" : "FAIL")} ok={good} fail={bad}");
     Environment.ExitCode = bad == 0 ? 0 : 1;
+    return;
+}
+
+// Размер главного окна: SmokeTest --window-size
+// Арифметика общая для WPF и Avalonia (WindowSizeCalculator), поэтому проверяется здесь один раз.
+// Регресс из жалобы игрока: на 1920x1080 окно упиралось в потолок 1440x810 и занимало чуть больше
+// половины экрана.
+if (args.Length >= 1 && args[0].Equals("--window-size", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    static string Show((double Width, double Height) size) => $"{size.Width:0}x{size.Height:0}";
+
+    // Рабочая область 1920x1080 за вычетом панели задач.
+    var fullHd = WindowSizeCalculator.Select(1920, 1040);
+    Check("1080p: окно 1600x900", Math.Abs(fullHd.Width - 1600) < 1 && Math.Abs(fullHd.Height - 900) < 1, Show(fullHd));
+    Check("1080p: окно больше половины экрана", fullHd.Width * fullHd.Height > 1920 * 1080 * 0.65, Show(fullHd));
+
+    // 2K и 4K: дальше потолка не растём.
+    var qhd = WindowSizeCalculator.Select(2560, 1400);
+    var uhd = WindowSizeCalculator.Select(3840, 2100);
+    Check("2K не превышает потолок", qhd.Width <= WindowSizeCalculator.MaxWidth && qhd.Height <= WindowSizeCalculator.MaxHeight, Show(qhd));
+    Check("4K не превышает потолок", uhd.Width <= WindowSizeCalculator.MaxWidth && uhd.Height <= WindowSizeCalculator.MaxHeight, Show(uhd));
+
+    // Маленькие экраны: окно обязано влезать в рабочую область, иначе кнопки уедут за край.
+    foreach (var (workWidth, workHeight) in new[] { (1366.0, 728.0), (1280.0, 680.0), (1024.0, 600.0) })
+    {
+        var size = WindowSizeCalculator.Select(workWidth, workHeight);
+        Check($"{workWidth:0}x{workHeight:0}: влезает в рабочую область",
+            size.Width <= Math.Max(WindowSizeCalculator.MinWidth, workWidth) &&
+            size.Height <= Math.Max(WindowSizeCalculator.MinHeight, workHeight),
+            Show(size));
+    }
+
+    // Пропорции не должны уезжать в полосу: держимся около 16:9.
+    foreach (var (workWidth, workHeight) in new[] { (1920.0, 1040.0), (1600.0, 860.0), (1366.0, 728.0) })
+    {
+        var size = WindowSizeCalculator.Select(workWidth, workHeight);
+        var ratio = size.Width / size.Height;
+        Check($"{workWidth:0}x{workHeight:0}: пропорции около 16:9", ratio > 1.6 && ratio < 1.85, $"{Show(size)} → {ratio:0.00}");
+    }
+
+    // Рост монотонный: на большем экране окно не может стать меньше.
+    var small = WindowSizeCalculator.Select(1366, 728);
+    Check("на большем экране окно не меньше", fullHd.Width >= small.Width && fullHd.Height >= small.Height,
+        $"{Show(small)} → {Show(fullHd)}");
+
+    Console.WriteLine($"WINDOW_SIZE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
+// Полнота установки лоадера: SmokeTest --forge-complete
+// Регресс из саппорт-логов: в version.json Forge 1.20.1 нет артефактов с пустым url, поэтому
+// старая проверка всегда говорила «установлено», самолечение не запускалось, и игрок бесконечно
+// получал «Invalid paths argument, contained no existing paths».
+if (args.Length >= 1 && args[0].Equals("--forge-complete", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var probe = typeof(RuntimeInstallService).GetMethod(
+        "AreGeneratedLoaderArtifactsPresent",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+    if (probe is null)
+    {
+        Console.WriteLine("FORGE_COMPLETE_RESULT=FAIL (метод AreGeneratedLoaderArtifactsPresent не найден)");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    bool Probe(string root, ModpackManifest manifest) => (bool)probe.Invoke(null, [root, manifest])!;
+
+    static ModpackManifest Pack(string loader, string loaderVersion, string minecraftVersion)
+    {
+        var manifest = new ModpackManifest();
+        manifest.Modpack.Loader = loader;
+        manifest.Modpack.LoaderVersion = loaderVersion;
+        manifest.Modpack.MinecraftVersion = minecraftVersion;
+        return manifest;
+    }
+
+    static void Touch(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "jar");
+    }
+
+    var sandbox = Path.Combine(Path.GetTempPath(), "smoke-forge-" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var forge = Pack("forge", "47.4.10", "1.20.1");
+
+        // Пустая папка — установки нет.
+        Check("пустая установка считается неполной", !Probe(sandbox, forge), sandbox);
+
+        // Ровно случай игрока DragonOrsted: клиентские jar-ы есть, а forge-client.jar нет.
+        var clientDir = Path.Combine(sandbox, "libraries", "net", "minecraft", "client", "1.20.1-20230612.114412");
+        Touch(Path.Combine(clientDir, "client-1.20.1-20230612.114412-srg.jar"));
+        Touch(Path.Combine(clientDir, "client-1.20.1-20230612.114412-extra.jar"));
+        Check("без forge-client.jar установка неполная", !Probe(sandbox, forge), "нет forge-*-client.jar");
+
+        var forgeJar = Path.Combine(sandbox, "libraries", "net", "minecraftforge", "forge", "1.20.1-47.4.10", "forge-1.20.1-47.4.10-client.jar");
+        Touch(forgeJar);
+        Check("полная установка проходит проверку", Probe(sandbox, forge), forgeJar);
+
+        // Обратная сторона: пропал пропатченный клиент — тоже переустановка.
+        File.Delete(Path.Combine(clientDir, "client-1.20.1-20230612.114412-srg.jar"));
+        Check("без client-srg.jar установка неполная", !Probe(sandbox, forge), "нет client-*-srg.jar");
+        Touch(Path.Combine(clientDir, "client-1.20.1-20230612.114412-srg.jar"));
+
+        // Манифест уже содержит полную версию лоадера — путь не должен склеиваться дважды.
+        Check("loaderVersion с префиксом версии игры не ломает путь", Probe(sandbox, Pack("forge", "1.20.1-47.4.10", "1.20.1")), "1.20.1-47.4.10");
+
+        // NeoForge: своя раскладка, client-srg не требуется.
+        var neo = Pack("neoforge", "21.1.233", "1.21.1");
+        Check("NeoForge без своего jar-а неполон", !Probe(sandbox, neo), "нет neoforge-*-client.jar");
+        Touch(Path.Combine(sandbox, "libraries", "net", "neoforged", "neoforge", "21.1.233", "neoforge-21.1.233-client.jar"));
+        Check("NeoForge не требует client-srg.jar", Probe(sandbox, neo), "21.1.233");
+
+        // Версия лоадера неизвестна — проверка не имеет права блокировать запуск.
+        Check("пустой loaderVersion не блокирует", Probe(sandbox, Pack("forge", "", "1.20.1")), "проверять нечем");
+    }
+    finally
+    {
+        try { Directory.Delete(sandbox, true); } catch { }
+    }
+
+    Console.WriteLine($"FORGE_COMPLETE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
     return;
 }
 

@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Launcher.Avalonia.ViewModels"
         x:Class="Launcher.Avalonia.MainWindow"
@@ -203,16 +203,22 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1.6*" MinWidth="380" />
                             <ColumnDefinition Width="18" />
-                            <ColumnDefinition Width="*" MinWidth="300" MaxWidth="420" />
+                            <ColumnDefinition Width="*" MinWidth="300" MaxWidth="460" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                        <!-- Колонка тянется во всю высоту, как и панель новостей справа: раньше
+                             карточки жались к верху, а под ними оставалась пустая треть окна.
+                             Паритет с WPF-версией. -->
+                        <Grid Grid.Column="0" RowDefinitions="Auto,*">
                             <TextBlock x:Name="ServerSummaryTextBlock" FontSize="13" TextWrapping="Wrap"
                                        Foreground="{DynamicResource MutedBrush}"
                                        Text="Получаем статус серверов…" />
 
-                            <!-- Каждый сервер — самостоятельная стеклянная карточка во всю ширину колонки. -->
-                            <ItemsControl x:Name="ServerList" Margin="0,12,0,0" MaxWidth="640"
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                            <!-- Каждый сервер — самостоятельная стеклянная карточка во всю ширину колонки.
+                                 MaxWidth="640" убран: карточки не доставали до панели новостей. -->
+                            <ItemsControl x:Name="ServerList" Margin="0,12,0,0" VerticalAlignment="Top"
                                           HorizontalAlignment="Stretch" ItemsSource="{Binding Servers}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ServerListItem">
@@ -259,7 +265,8 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                        </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
 
                         <Border Grid.Column="2" VerticalAlignment="Stretch" CornerRadius="24" Padding="20"
                                 Background="{DynamicResource GlassFillBrush}"
