@@ -486,16 +486,19 @@
                                                        Foreground="{DynamicResource MutedBrush}" Text="0 из 0" />
                                         </Grid>
 
+                                        <!-- UniformGrid вместо WrapPanel: карточки фиксированной ширины
+                                             оставляли справа пустой хвост. Паритет с WPF-версией. -->
                                         <ItemsControl x:Name="AchievementsPanel" Margin="0,14,0,0"
-                                                      ItemsSource="{Binding Achievements}">
+                                                      ItemsSource="{Binding Achievements}"
+                                                      SizeChanged="AchievementsPanel_SizeChanged">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
-                                                    <WrapPanel />
+                                                    <UniformGrid x:Name="AchievementsGrid" Columns="4" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:AchievementItem">
-                                                    <Border Width="176" Margin="0,0,9,9" CornerRadius="16" Padding="13,11"
+                                                    <Border Margin="0,0,9,9" CornerRadius="16" Padding="13,11"
                                                             Background="{DynamicResource CardAltBrush}"
                                                             BorderBrush="{Binding BorderBrush}" BorderThickness="1"
                                                             Opacity="{Binding CardOpacity}"

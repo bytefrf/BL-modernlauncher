@@ -2273,6 +2273,50 @@ public partial class MainWindow : Window, IDisposable
         OfflineBannerText.Text = state.Message;
     }
 
+    /// <summary>
+    /// Раскладывает карточки достижений на всю ширину блока.
+    /// </summary>
+    /// <remarks>
+    /// UniformGrid делит доступную ширину поровну, поэтому пустого хвоста справа не остаётся при
+    /// любой ширине окна — а окно теперь тянется мышью, и ширина меняется постоянно.
+    /// </remarks>
+    private void AchievementsPanel_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ItemsControl panel)
+        {
+            return;
+        }
+
+        var grid = FindVisualChild<System.Windows.Controls.Primitives.UniformGrid>(panel);
+        if (grid is null)
+        {
+            return;
+        }
+
+        grid.Columns = GridColumnsCalculator.Resolve(e.NewSize.Width, minItemWidth: 185);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < count; index++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var nested = FindVisualChild<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
     private void UpdateProfileAvatar()
     {
         if (ProfileAvatarTextBlock is null)

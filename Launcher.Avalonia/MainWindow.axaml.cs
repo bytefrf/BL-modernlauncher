@@ -13,6 +13,7 @@ using Avalonia.Platform;
 using Launcher.App;
 using Launcher.App.Configuration;
 using Launcher.App.Models;
+using Avalonia.VisualTree;
 using Launcher.App.Platform;
 using Launcher.App.Services;
 using Launcher.App.Theming;
@@ -579,6 +580,26 @@ public partial class MainWindow : Window
     /// с масштабом 150% окно получалось в полтора раза больше экрана, и правая часть
     /// интерфейса (новости, кнопки действий) уезжала за край.
     /// </remarks>
+    /// <summary>
+    /// Раскладывает карточки достижений на всю ширину блока. Паритет с WPF-версией: UniformGrid
+    /// делит ширину поровну, поэтому пустого хвоста справа не остаётся при любом размере окна.
+    /// </summary>
+    private void AchievementsPanel_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (sender is not ItemsControl panel)
+        {
+            return;
+        }
+
+        var grid = panel.GetVisualDescendants().OfType<global::Avalonia.Controls.Primitives.UniformGrid>().FirstOrDefault();
+        if (grid is null)
+        {
+            return;
+        }
+
+        grid.Columns = GridColumnsCalculator.Resolve(e.NewSize.Width, minItemWidth: 185);
+    }
+
     /// <summary>Запоминает размер окна, чтобы в следующий раз открыть его таким же.</summary>
     private void RememberWindowSize()
     {

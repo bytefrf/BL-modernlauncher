@@ -1332,6 +1332,15 @@ if (args.Length >= 1 && args[0].Equals("--window-size", StringComparison.Ordinal
     Check("на большем экране окно не меньше", fullHd.Width >= small.Width && fullHd.Height >= small.Height,
         $"{Show(small)} → {Show(fullHd)}");
 
+    // Сетка карточек достижений: пустого хвоста справа быть не должно ни при какой ширине.
+    Check("на узком блоке одна колонка", GridColumnsCalculator.Resolve(300, 185) == 1, "1");
+    Check("на 900 px помещается четыре", GridColumnsCalculator.Resolve(900, 185) == 4, GridColumnsCalculator.Resolve(900, 185).ToString());
+    Check("на 1300 px помещается семь", GridColumnsCalculator.Resolve(1300, 185) == 7, GridColumnsCalculator.Resolve(1300, 185).ToString());
+    Check("шире потолка не растягиваем", GridColumnsCalculator.Resolve(5000, 185) == 8, GridColumnsCalculator.Resolve(5000, 185).ToString());
+    // Первый проход разметки: ширина ещё не известна.
+    Check("нулевая ширина не даёт ноль колонок", GridColumnsCalculator.Resolve(0, 185) == 1, "1");
+    Check("бесконечная ширина не ломает расчёт", GridColumnsCalculator.Resolve(double.PositiveInfinity, 185) == 1, "1");
+
     // Сохранённый размер: подгоняется под текущий экран и не принимается, если он бессмысленный.
     Check("сохранённый размер применяется как есть",
         WindowSizeCalculator.Restore(1200, 700, 1920, 1040) is (1200, 700),
