@@ -844,6 +844,87 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// Состав саппорт-бандла: SmokeTest --support-bundle
+// Регресс из разбора логов: в бандл попадал самый свежий launcher-error-*.log, даже если ему
+// 25 дней. При разборе он выглядит уликой текущего обращения и уводит в сторону — у одного
+// игрока так «нашлась» нехватка места на диске C:, хотя сборка давно стояла на D:.
+if (args.Length >= 1 && args[0].Equals("--support-bundle", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var root = Path.Combine(Path.GetTempPath(), "smoke-support-" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        var logs = Path.Combine(root, ".launcher", "logs");
+        Directory.CreateDirectory(logs);
+        Directory.CreateDirectory(Path.Combine(root, "logs"));
+
+        // Свежий лог ошибки и старый лог установщика Forge — ровно та смесь, что приходит в бандлах.
+        var freshError = Path.Combine(logs, "launcher-error-20260822-010000.log");
+        File.WriteAllText(freshError, "Заголовок: Ошибка сети");
+        File.SetLastWriteTimeUtc(freshError, DateTime.UtcNow.AddMinutes(-5));
+
+        var oldForge = Path.Combine(logs, "forge-installer-20260801-101010.stdout.log");
+        File.WriteAllText(oldForge, "старый лог установщика");
+        File.SetLastWriteTimeUtc(oldForge, DateTime.UtcNow.AddDays(-21));
+
+        var package = await new SupportLogService(new HttpClient()).CreatePackageAsync(
+            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None);
+
+        // Архив обязательно закрываем: имя бандла содержит время с точностью до секунды, и второй
+        // вызов в ту же секунду попадёт в тот же файл.
+        List<string> names;
+        using (var archive = System.IO.Compression.ZipFile.OpenRead(package.Path))
+        {
+            names = archive.Entries.Select(entry => entry.FullName).ToList();
+        }
+
+        Console.WriteLine("  файлы в бандле: " + string.Join(", ", names));
+
+        Check("свежий лог ошибки лежит в launcher/",
+            names.Any(n => n.StartsWith("launcher/launcher-error-", StringComparison.Ordinal)),
+            "launcher/launcher-error-*.log");
+        Check("старый лог Forge уехал в forge/old/",
+            names.Any(n => n.StartsWith("forge/old/", StringComparison.Ordinal)),
+            "forge/old/*.log");
+        Check("старый лог Forge НЕ выдаётся за текущий",
+            !names.Any(n => n.StartsWith("forge/forge-installer-", StringComparison.Ordinal)),
+            "в forge/ пусто");
+
+        // Теперь наоборот: лог ошибки протух, свежих нет вовсе.
+        File.SetLastWriteTimeUtc(freshError, DateTime.UtcNow.AddDays(-25));
+        await Task.Delay(1100);
+        var second = await new SupportLogService(new HttpClient()).CreatePackageAsync(
+            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None);
+
+        List<string> names2;
+        using (var archive2 = System.IO.Compression.ZipFile.OpenRead(second.Path))
+        {
+            names2 = archive2.Entries.Select(entry => entry.FullName).ToList();
+        }
+        Check("лог ошибки 25-дневной давности уехал в launcher/old/",
+            names2.Any(n => n.StartsWith("launcher/old/", StringComparison.Ordinal)) &&
+            !names2.Any(n => n.StartsWith("launcher/launcher-error-", StringComparison.Ordinal)),
+            string.Join(", ", names2.Where(n => n.StartsWith("launcher/", StringComparison.Ordinal))));
+
+        Check("контекст бандла на месте", names2.Contains("launcher-context.txt"), "launcher-context.txt");
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch { }
+    }
+
+    Console.WriteLine($"SUPPORT_BUNDLE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Размер главного окна: SmokeTest --window-size
 // Арифметика общая для WPF и Avalonia (WindowSizeCalculator), поэтому проверяется здесь один раз.
 // Регресс из жалобы игрока: на 1920x1080 окно упиралось в потолок 1440x810 и занимало чуть больше

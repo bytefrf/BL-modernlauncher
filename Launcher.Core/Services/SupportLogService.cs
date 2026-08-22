@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -46,10 +46,17 @@ public sealed class SupportLogService(HttpClient httpClient)
         includedFiles.Add("launcher-context.txt");
 
         var launcherLogRoot = Path.Combine(installRoot, ".launcher", "logs");
-        AddLatestMatchingFile(archive, launcherLogRoot, "launcher-error-*.log", "launcher", MaxTextLogBytes, includedFiles);
+        // Логи ошибок и установщика Forge живут в папке вечно, и самый свежий из них может быть
+        // недельной давности. В бандле такой файл выглядит уликой текущего обращения: в партии за
+        // 21–22.08 устаревшими оказались 6 из 8 launcher-error, вплоть до 25 дней. Разводим их
+        // по отдельным папкам — тем же механизмом, что и крэш-репорты.
+        // Без игровой сессии (игрок сам нажал «Поддержка») точки отсчёта нет, поэтому берём сутки:
+        // лог старше суток к текущему обращению точно не относится.
+        var recentThreshold = sessionStartedUtc ?? DateTime.UtcNow - TimeSpan.FromHours(24);
+        AddLatestMatchingFile(archive, launcherLogRoot, "launcher-error-*.log", "launcher", MaxTextLogBytes, includedFiles, recentThreshold, "launcher/old");
         AddLatestMatchingFile(archive, launcherLogRoot, "launcher-20*.log", "launcher", MaxTextLogBytes, includedFiles);
-        AddLatestMatchingFile(archive, launcherLogRoot, "forge-installer-*.stderr.log", "forge", MaxTextLogBytes, includedFiles);
-        AddLatestMatchingFile(archive, launcherLogRoot, "forge-installer-*.stdout.log", "forge", MaxTextLogBytes, includedFiles);
+        AddLatestMatchingFile(archive, launcherLogRoot, "forge-installer-*.stderr.log", "forge", MaxTextLogBytes, includedFiles, recentThreshold, "forge/old");
+        AddLatestMatchingFile(archive, launcherLogRoot, "forge-installer-*.stdout.log", "forge", MaxTextLogBytes, includedFiles, recentThreshold, "forge/old");
 
         // Крэш-логи самого лаунчера (App) и бутстраппера: без них ранние/тихие краши не видны.
         AddFileEntry(archive, Path.Combine(installRoot, ".launcher", "launcher-crash.log"), "launcher/launcher-crash.log", MaxTextLogBytes, includedFiles);
