@@ -23,6 +23,10 @@ public static class CrashAnalyzerService
         "Повреждён файл настроек одного из модов — игра не может его прочитать и падает на запуске мира. " +
         "Удали этот файл: игра создаст его заново со значениями по умолчанию.";
 
+    private const string JavaVersionGenericSummary =
+        "Игра запущена не на той версии Java, под которую собран модпак. Открой Настройки лаунчера и очисти поле " +
+        "«Путь к Java» — тогда лаунчер сам скачает и подставит нужную версию.";
+
     private static readonly (string Category, string[] Needles, string Summary)[] KnownPatterns =
     [
         ("launch_classpath",
@@ -165,13 +169,19 @@ public static class CrashAnalyzerService
         ],
         "Java не подходит по архитектуре процессора (например, x64 вместо arm64 на Apple Silicon). Очисти путь к Java в настройках лаунчера — он скачает подходящую сам."),
 
-        // Самая частая причина крашей в саппорт-логах (136 бандлов за июль 2026, сборки 0.13.3+):
-        // баг мода TooManyRecipeViewers — NPE при обращении к JEI-плагинам, обычно по клику мышью.
+        // Самая частая причина крашей в саппорт-логах (142 из 235 краш-репортов за август 2026).
+        // Механика, восстановленная по логам: при ПОДКЛЮЧЕНИИ к серверу TooManyRecipeViewers валится
+        // с «Tried to add ingredients after registry is locked» (304 таких строки), из-за чего рантайм
+        // JEI не достраивается и поле jeiPlugins остаётся null. Дальше ЛЮБОЙ выход из мира зовёт
+        // firePlayerLogout → TMRV лезет в null → жёсткий краш вместо экрана «Отключено».
+        // Распределение: 81 — Esc → «Отключиться», 59 — разрыв связи/кик самим сервером, 2 — клик по
+        // другому серверу в списке. Ни одного краша от открытия интерфейса рецептов НЕ БЫЛО, поэтому
+        // прежний совет «не открывай просмотр рецептов» игрокам не помогал.
         ("mod_recipe_viewer",
         [
             "JEIPluginManager.onRuntimeUnavailable"
         ],
-        "Известный баг мода просмотра рецептов (TooManyRecipeViewers/JEI) — краш при клике в интерфейсе рецептов. Это баг мода в сборке, не лаунчера. Что делать: не открывай просмотр рецептов до обновления сборки и сообщи в поддержку — исправление приедет с обновлением сборки."),
+        "Известный баг мода просмотра рецептов (TooManyRecipeViewers) — краш при выходе с сервера или при обрыве связи. Это баг мода в сборке, не лаунчера, и обойти его нельзя: игра падает при любом отключении. Главное — бояться нечего: мир и вещи хранятся на сервере, при таком краше ничего не теряется, просто запусти игру заново. Исправление приедет с обновлением сборки."),
 
         // Тот же просмотрщик рецептов, но другая ветка: EMI разбирает свои миксины при отключении
         // от сервера и ловит ConcurrentModificationException. В саппорт-логах за август 2026 это
@@ -181,7 +191,7 @@ public static class CrashAnalyzerService
             "EmiMixinTransformation",
             "ConcurrentModificationException"
         ],
-        "Известный баг мода просмотра рецептов (EMI) — краш при отключении от сервера. Это баг мода в сборке, не лаунчера. Что делать: выходи из мира через «Сохранить и выйти», а не закрытием окна, и сообщи в поддержку — исправление приедет с обновлением сборки."),
+        "Известный баг мода просмотра рецептов (EMI) — краш при отключении от сервера. Это баг мода в сборке, не лаунчера. Прогресс не теряется: мир и вещи хранятся на сервере, просто запусти игру заново. Исправление приедет с обновлением сборки."),
 
         // Битый кэш генерируемых ресурспаков: игра ищет папку, которую сама же не дописала
         // (обычно после аварийного завершения). Разбор идёт ДО missing_file — там та же
@@ -259,7 +269,9 @@ public static class CrashAnalyzerService
             "UnsupportedClassVersionError",
             "has been compiled by a more recent version"
         ],
-        "Неверная версия Java. Для этой сборки нужна Java 17."),
+        // Конкретные версии подставляет RefineJavaVersionSummary из текста ошибки: жёстко зашитая
+        // «Java 17» врала на сборках, которым нужна Java 21 (GregTech Odyssey, StoneBlock 4).
+        JavaVersionGenericSummary),
 
         // Битый конфиг мода. Разбор идёт ДО mod_dependency и missing_file: там встречаются те же слова
         // про мод и файл, а починка совсем другая — надо удалить один файл, а не проверять сборку.
@@ -385,6 +397,7 @@ public static class CrashAnalyzerService
                       ?? DetectFinding(combined, exitCode, allowFallback: true)!;
         var summary = RefineClasspathSummary(finding, installRoot);
         summary = RefineConfigSummary(finding, summary, crashText, combined);
+        summary = RefineJavaVersionSummary(finding, summary, crashText, combined);
         var details = BuildDetails(exitCode, summary, latestLogPath, crashReportPath);
 
         return new CrashAnalysisResult(
@@ -460,6 +473,58 @@ public static class CrashAnalyzerService
     /// остальные — в общей папке <c>config</c>. Перепутать нельзя: в <c>config</c> файла с этим
     /// именем просто нет, и игрок решит, что совет неверный.
     /// </remarks>
+    /// <summary>
+    /// Подставляет в совет РЕАЛЬНЫЕ версии Java из текста ошибки. JVM пишет их номерами формата
+    /// class-файла: «class file version 65.0» (нужна 21) против «only recognizes ... up to 61.0»
+    /// (запущена 17). Раньше в совете была зашита «Java 17», и на сборках под Java 21 лаунчер
+    /// уверенно называл игроку неверную версию.
+    /// </summary>
+    private static string RefineJavaVersionSummary(CrashFinding finding, string summary, string crashText, string combined)
+    {
+        if (!string.Equals(finding.Category, "java_version", StringComparison.Ordinal))
+        {
+            return summary;
+        }
+
+        var match = JavaClassVersionPattern.Match(crashText);
+        if (!match.Success)
+        {
+            match = JavaClassVersionPattern.Match(combined);
+        }
+
+        if (!match.Success)
+        {
+            return summary;
+        }
+
+        var required = ToJavaMajor(match.Groups["required"].Value);
+        var actual = ToJavaMajor(match.Groups["actual"].Value);
+        if (required is null || actual is null)
+        {
+            return summary;
+        }
+
+        return $"Сборке нужна Java {required}, а игра запущена на Java {actual}. Открой Настройки лаунчера и очисти " +
+               $"поле «Путь к Java» — тогда лаунчер скачает и подставит Java {required} сам. Если путь там пустой, " +
+               "нажми «Проверить файлы»: встроенная Java могла не докачаться.";
+    }
+
+    // «class file version 65.0» — то, что требует мод; «up to 61.0» — то, на чём запустили.
+    private static readonly Regex JavaClassVersionPattern = new(
+        @"class file version (?<required>\d+)(\.\d+)?.*?up to (?<actual>\d+)(\.\d+)?",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+    // Формат class-файла старше Java 8 нам не встречается: 52 = Java 8, дальше +1 за версию.
+    private static int? ToJavaMajor(string classFileVersion)
+    {
+        if (!int.TryParse(classFileVersion, out var value) || value < 52 || value > 99)
+        {
+            return null;
+        }
+
+        return value - 44;
+    }
+
     private static string RefineConfigSummary(CrashFinding finding, string summary, string crashText, string combined)
     {
         if (!string.Equals(finding.Category, "config_corrupted", StringComparison.Ordinal))

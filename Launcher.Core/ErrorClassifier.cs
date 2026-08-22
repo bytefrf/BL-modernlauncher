@@ -203,12 +203,13 @@ public static class ErrorClassifier
         // После Forge-проверок: в тексте отказа установщика тоже есть путь к java.exe, и раньше он
         // перехватывался здесь, подменяя настоящую причину советами про Java.
         if (message.Contains("Java 17", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Нужна Java", StringComparison.OrdinalIgnoreCase)
             || message.Contains("java.exe", StringComparison.OrdinalIgnoreCase)
             || message.Contains("javaw.exe", StringComparison.OrdinalIgnoreCase))
         {
             return Create(
                 "Проблема с Java",
-                "Лаунчер не смог найти или запустить Java 17. Обычно встроенная Java ставится автоматически, но установка могла оборваться.",
+                "Лаунчер не смог найти или запустить Java нужной сборке версии. Обычно встроенная Java ставится автоматически, но установка могла оборваться.",
                 [
                     "Запусти лаунчер ещё раз, он попробует установить Java заново.",
                     "Проверь интернет, потому что Java скачивается отдельно.",
