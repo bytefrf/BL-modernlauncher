@@ -1216,7 +1216,8 @@ if (args.Length >= 1 && args[0].Equals("--support-bundle", StringComparison.Ordi
                 LogTail: "", HasHsErr: true));
 
         var package = await new SupportLogService(new HttpClient()).CreatePackageAsync(
-            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None, null, facts);
+            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None, null, facts,
+            allocatedMemoryMb: 8704);
 
         // Архив обязательно закрываем: имя бандла содержит время с точностью до секунды, и второй
         // вызов в ту же секунду попадёт в тот же файл.
@@ -1265,6 +1266,10 @@ if (args.Length >= 1 && args[0].Equals("--support-bundle", StringComparison.Ordi
             var context = reader.ReadToEnd();
             Check("код выхода попал в контекст", context.Contains("ExitCode: -1073741819"), "ExitCode");
             Check("расшифровка кода на месте", context.Contains("0xC0000005") && context.Contains("нарушение доступа"), "ExitCodeHex + ExitCodeMeaning");
+            // Реальный случай 22.08: игроку выделено 8704 МБ, процесс убит без единого следа —
+            // ни крэш-репорта, ни hs_err. Понять, перебор это или нет, можно только зная объём ОЗУ.
+            Check("выделенная память попала в контекст", context.Contains("AllocatedMemoryMb: 8704"), "AllocatedMemoryMb");
+            Check("объём ОЗУ машины попал в контекст", context.Contains("RamTotalMb:"), "RamTotalMb");
             Check("признаки разбора на месте",
                 context.Contains("HasCrashReport: no") && context.Contains("HasHsErr: yes") && context.Contains("CrashCategory: graphics_driver"),
                 "HasCrashReport/HasHsErr/CrashCategory");

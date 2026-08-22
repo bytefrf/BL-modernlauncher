@@ -1806,7 +1806,8 @@ public partial class MainWindow : Window
                 errorTitle,
                 CancellationToken.None,
                 sessionStartedUtc,
-                sessionFacts);
+                sessionFacts,
+                _userSettings.MemoryMb);
 
             await supportLogService.UploadAsync(
                 SupportLogsUrl,
@@ -2374,7 +2375,8 @@ public partial class MainWindow : Window
             GetLauncherVersion(),
             GetTelemetryModpackVersion(),
             errorInfo.Title,
-            CancellationToken.None);
+            CancellationToken.None,
+            allocatedMemoryMb: _userSettings.MemoryMb);
 
         try
         {

@@ -24,7 +24,8 @@ public sealed class SupportLogService(HttpClient httpClient)
         string errorTitle,
         CancellationToken cancellationToken = default,
         DateTime? sessionStartedUtc = null,
-        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null,
+        int allocatedMemoryMb = 0)
     {
         installRoot = string.IsNullOrWhiteSpace(installRoot) || installRoot == "-"
             ? Path.Combine(LauncherPaths.GetApplicationDataRoot(), "ForgeLauncher")
@@ -42,7 +43,7 @@ public sealed class SupportLogService(HttpClient httpClient)
         await WriteTextEntryAsync(
             archive,
             "launcher-context.txt",
-            BuildContext(clientId, username, launcherVersion, modpackVersion, installRoot, errorTitle, sessionFacts),
+            BuildContext(clientId, username, launcherVersion, modpackVersion, installRoot, errorTitle, sessionFacts, allocatedMemoryMb),
             cancellationToken);
         includedFiles.Add("launcher-context.txt");
 
@@ -148,7 +149,8 @@ public sealed class SupportLogService(HttpClient httpClient)
         string modpackVersion,
         string installRoot,
         string errorTitle,
-        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null,
+        int allocatedMemoryMb = 0)
     {
         var builder = new StringBuilder()
             .AppendLine($"Created: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
@@ -159,6 +161,19 @@ public sealed class SupportLogService(HttpClient httpClient)
             .AppendLine($"InstallRoot: {installRoot}")
             .AppendLine($"OS: {Environment.OSVersion.VersionString}")
             .AppendLine($"Error: {errorTitle}");
+
+        // Память — самая частая причина «игра умерла молча»: процесс убивают, следов не остаётся.
+        // Без этих двух чисел такой бандл разобрать нечем: в логах видно только -Xmx, а сколько
+        // на машине физически ОЗУ — неизвестно, и понять, перебор это или нет, невозможно.
+        if (allocatedMemoryMb > 0)
+        {
+            builder.AppendLine($"AllocatedMemoryMb: {allocatedMemoryMb}");
+        }
+
+        if (SystemInfoCollector.TryGetTotalRamMb() is { } totalRam)
+        {
+            builder.AppendLine($"RamTotalMb: {totalRam}");
+        }
 
         // Код выхода игры и признаки разбора. Без них 88 бандлов из 388 (партия за август) были
         // чёрным ящиком: ни крэш-репорта, ни hs_err, а код выхода лежал ТОЛЬКО в телеметрии,
