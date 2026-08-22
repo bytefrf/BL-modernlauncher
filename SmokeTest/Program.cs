@@ -844,6 +844,53 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// История ников: SmokeTest --usernames
+if (args.Length >= 1 && args[0].Equals("--usernames", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var history = UsernameHistory.Remember(null, "bytefg");
+    Check("первый ник запомнился", history is ["bytefg"], string.Join(", ", history));
+
+    history = UsernameHistory.Remember(history, "Allera");
+    Check("последний использованный — первым", history is ["Allera", "bytefg"], string.Join(", ", history));
+
+    history = UsernameHistory.Remember(history, "BYTEFG");
+    Check("дубль не плодится, регистр не важен", history is ["BYTEFG", "Allera"], string.Join(", ", history));
+
+    // «Player» — заглушка по умолчанию, а не осознанный выбор игрока.
+    var withStub = UsernameHistory.Remember(history, "Player");
+    Check("заглушка Player не запоминается", withStub is ["BYTEFG", "Allera"], string.Join(", ", withStub));
+
+    var withBlank = UsernameHistory.Remember(history, "   ");
+    Check("пустой ник не запоминается", withBlank is ["BYTEFG", "Allera"], string.Join(", ", withBlank));
+
+    var many = new List<string>();
+    for (var i = 0; i < 10; i++)
+    {
+        many = UsernameHistory.Remember(many, "nick" + i);
+    }
+
+    Check($"история не длиннее {UsernameHistory.MaxEntries}", many.Count == UsernameHistory.MaxEntries, string.Join(", ", many));
+    Check("вытесняются самые старые", many[0] == "nick9" && !many.Contains("nick0"), string.Join(", ", many));
+
+    var menu = UsernameHistory.ForMenu(many, "nick9");
+    Check("текущий ник в меню не показываем", !menu.Contains("nick9") && menu.Count == many.Count - 1, string.Join(", ", menu));
+
+    var dirty = UsernameHistory.ForMenu(["  Allera  ", "", "allera", "StopKran"], "StopKran");
+    Check("мусор и дубли из файла настроек отсеиваются", dirty is ["Allera"], string.Join(", ", dirty));
+
+    Console.WriteLine($"USERNAMES_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Совет по памяти: SmokeTest --memory
 // Раньше объём ОЗУ знала только телеметрия, а настройка памяти — нет. Мало памяти = вылет на
 // загрузке мира, слишком много = своп и фризы; обе крайности игрок видит как «лаунчер сломался».

@@ -176,6 +176,7 @@ public partial class MainWindow : Window, IDisposable
             UpdateUsernameIndicator();
         };
         UpdateUsernameIndicator();
+        UpdateUsernameHistoryButton();
         RefreshProfileUi();
         SetActiveTab(account: false);
 
@@ -1471,7 +1472,48 @@ public partial class MainWindow : Window, IDisposable
         }
 
         _userSettings.Username = GetUsername();
+        _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
         _userSettings.Save(_configuration.GetUserSettingsPath());
+        UpdateUsernameHistoryButton();
+    }
+
+    /// <summary>Кнопка истории бесполезна, пока переключаться не на что — прячем её.</summary>
+    private void UpdateUsernameHistoryButton()
+    {
+        if (UsernameHistoryButton is null)
+        {
+            return;
+        }
+
+        UsernameHistoryButton.Visibility = UsernameHistory.ForMenu(_userSettings.RecentUsernames, GetUsername()).Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void UsernameHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var names = UsernameHistory.ForMenu(_userSettings.RecentUsernames, GetUsername());
+        if (names.Count == 0)
+        {
+            return;
+        }
+
+        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = UsernameHistoryButton };
+        foreach (var name in names)
+        {
+            var item = new System.Windows.Controls.MenuItem { Header = name };
+            item.Click += (_, _) =>
+            {
+                UsernameTextBox.Text = name;
+                SaveUserSettings();
+                RefreshProfileUi();
+                _ = RunBackgroundAsync(() => RefreshSiteAchievementsAsync(force: true));
+                _ = RunBackgroundAsync(() => RefreshSkinAsync(force: true));
+            };
+            menu.Items.Add(item);
+        }
+
+        menu.IsOpen = true;
     }
 
     private void EnsureTelemetryIdentity()

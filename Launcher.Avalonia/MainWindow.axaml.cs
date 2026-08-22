@@ -137,6 +137,7 @@ public partial class MainWindow : Window
 
             LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
             SetUsername(_userSettings.Username);
+            UpdateUsernameHistoryButton();
             ShowProfileBadge();
 
             if (_configuration.UsesCatalog())
@@ -1075,9 +1076,46 @@ public partial class MainWindow : Window
         }
 
         _userSettings.Username = value;
+        _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, value);
         _userSettings.Save(_configuration.GetUserSettingsPath());
         SetUsername(value);
         this.FindControl<TextBlock>("ProfileAvatarTextBlock")!.Text = value[..1].ToUpperInvariant();
+        UpdateUsernameHistoryButton();
+    }
+
+    /// <summary>Кнопка истории бесполезна, пока переключаться не на что — прячем её.</summary>
+    private void UpdateUsernameHistoryButton()
+    {
+        var button = this.FindControl<Button>("UsernameHistoryButton");
+        if (button is null)
+        {
+            return;
+        }
+
+        button.IsVisible = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username).Count > 0;
+    }
+
+    private void UsernameHistoryButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var names = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username);
+        if (names.Count == 0 || sender is not Button button)
+        {
+            return;
+        }
+
+        var flyout = new MenuFlyout();
+        foreach (var name in names)
+        {
+            var item = new MenuItem { Header = name };
+            item.Click += (_, _) =>
+            {
+                // Проставляем через поле: там уже висит вся проверка ника и обновление профиля.
+                this.FindControl<TextBox>("UsernameTextBox")!.Text = name;
+            };
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt(button);
     }
 
     private void LinkButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)

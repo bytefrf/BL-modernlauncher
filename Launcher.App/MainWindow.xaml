@@ -825,8 +825,16 @@
 
                                               <StackPanel Grid.Column="2">
                                                   <TextBlock Text="Ник" FontSize="12" Foreground="{DynamicResource MutedBrush}" />
-                                                  <TextBox x:Name="UsernameTextBox" Margin="0,6,0,0" Width="300"
-                                                           HorizontalAlignment="Left" Text="Player" />
+                                                  <!-- Ник + история: на одном компьютере нередко играют двое-трое,
+                                                       и раньше ник приходилось перепечатывать руками каждый раз. -->
+                                                  <StackPanel Orientation="Horizontal" Margin="0,6,0,0" HorizontalAlignment="Left">
+                                                      <TextBox x:Name="UsernameTextBox" Width="300" Text="Player" />
+                                                      <Button x:Name="UsernameHistoryButton" Margin="8,0,0,0" Width="34"
+                                                              Style="{StaticResource SoftButton}"
+                                                              Click="UsernameHistoryButton_Click"
+                                                              ToolTip="Недавние ники"
+                                                              Content="▾" />
+                                                  </StackPanel>
                                                   <TextBlock x:Name="UsernameHintTextBlock" Margin="0,6,0,0" FontSize="11"
                                                              TextWrapping="Wrap"
                                                              Foreground="{DynamicResource MutedBrush}"

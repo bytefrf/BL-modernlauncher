@@ -329,12 +329,19 @@
 
                                             <StackPanel Grid.Column="2">
                                                 <TextBlock Text="Ник" FontSize="12" Foreground="{DynamicResource MutedBrush}" />
-                                                <TextBox x:Name="UsernameTextBox" Margin="0,6,0,0" Width="300"
-                                                         HorizontalAlignment="Left" Text="Player"
-                                                         Background="{DynamicResource TextBoxBackgroundBrush}"
-                                                         BorderBrush="{DynamicResource TextBoxBorderBrush}"
-                                                         Foreground="{DynamicResource TextBrush}"
-                                                         TextChanged="UsernameTextBox_TextChanged" />
+                                                <!-- Ник + история: на одном компьютере нередко играют двое-трое.
+                                                     Паритет с WPF-версией. -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" HorizontalAlignment="Left">
+                                                    <TextBox x:Name="UsernameTextBox" Width="300" Text="Player"
+                                                             Background="{DynamicResource TextBoxBackgroundBrush}"
+                                                             BorderBrush="{DynamicResource TextBoxBorderBrush}"
+                                                             Foreground="{DynamicResource TextBrush}"
+                                                             TextChanged="UsernameTextBox_TextChanged" />
+                                                    <Button x:Name="UsernameHistoryButton" Margin="8,0,0,0" Width="34"
+                                                            Click="UsernameHistoryButton_Click"
+                                                            ToolTip.Tip="Недавние ники"
+                                                            Content="▾" />
+                                                </StackPanel>
                                                 <TextBlock x:Name="UsernameHintTextBlock" Margin="0,6,0,0" FontSize="11"
                                                            TextWrapping="Wrap"
                                                            Foreground="{DynamicResource MutedBrush}"

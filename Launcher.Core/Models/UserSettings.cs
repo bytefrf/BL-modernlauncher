@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Launcher.App.Platform;
 
 namespace Launcher.App.Models;
@@ -7,6 +7,9 @@ public sealed class UserSettings
 {
     public string Username { get; set; } = "Player";
     public string SupportEmail { get; set; } = string.Empty;
+
+    /// <summary>Последние использованные ники — для быстрого переключения между аккаунтами.</summary>
+    public List<string> RecentUsernames { get; set; } = [];
     public string ClientId { get; set; } = Guid.NewGuid().ToString();
     public bool TelemetryEnabled { get; set; } = true;
     public string ThemeId { get; set; } = "verdant";
