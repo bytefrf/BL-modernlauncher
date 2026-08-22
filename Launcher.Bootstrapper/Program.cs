@@ -17,6 +17,10 @@ internal static class Program
 {
     private static FileStream? _instanceLockStream;
 
+    // В режиме --preview-error окно ошибки показывается «понарошку»: телеметрию не шлём,
+    // иначе тестовые прогоны засорят статистику крашей на проде.
+    private static bool _previewErrorMode;
+
     [STAThread]
     private static async Task Main(string[] args)
     {
@@ -70,6 +74,18 @@ internal static class Program
                 $"Папка: {(string.IsNullOrEmpty(preview.Directory) ? "<отмена>" : preview.Directory)}\n" +
                 $"Ярлык на рабочем столе: {(preview.CreateDesktopShortcut ? "да" : "нет")}",
                 "Предпросмотр окна установки");
+            return;
+        }
+
+        // Показать окно ошибки, не ломая ничего по-настоящему: нужно, чтобы проверять
+        // формулировки, которые увидит игрок. Вид сбоя задаётся вторым аргументом.
+        if (args.Contains("--preview-error", StringComparer.OrdinalIgnoreCase))
+        {
+            var kind = args.SkipWhile(argument => !argument.Equals("--preview-error", StringComparison.OrdinalIgnoreCase))
+                .Skip(1)
+                .FirstOrDefault() ?? "dns";
+            _previewErrorMode = true;
+            ShowFatalError(BuildPreviewError(kind));
             return;
         }
 
@@ -143,7 +159,27 @@ internal static class Program
     // Защитная сетка: любое необработанное исключение в запуске (нет интернета, сервер вернул
     // ошибку, занят файл лаунчера и т.п.) раньше молча валило BL-modern.exe с кодом 0xe0434352 —
     // пользователь видел «ничего не открылось». Теперь пишем лог и показываем понятное сообщение.
+    // ERROR_APPEXEC_APP_COMPAT_BLOCK: «Политика управления приложениями заблокировала этот файл».
+    private const int AppPolicyBlockedErrorCode = 4551;
+
     private const string TelemetryEndpoint = "https://bl-modern.ru/api/telemetry.php";
+
+    private static Exception BuildPreviewError(string kind)
+    {
+        return kind.ToLowerInvariant() switch
+        {
+            "empty" => new LauncherPackageUnavailableException(null),
+            "policy" => new System.ComponentModel.Win32Exception(AppPolicyBlockedErrorCode, "An error occurred trying to start process. Политика управления приложениями заблокировала этот файл."),
+            "antivirus" => new FileNotFoundException("Could not load file or assembly.", "System.Threading.Thread, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"),
+            "denied" => new UnauthorizedAccessException("Access to the path 'D:\\Launcher.App.exe' is denied."),
+            "timeout" => new LauncherPackageUnavailableException(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.")),
+            "http" => new LauncherPackageUnavailableException(new HttpRequestException("Response status code does not indicate success: 403 (Forbidden).", null, System.Net.HttpStatusCode.Forbidden)),
+            "blocked" => new LauncherPackageUnavailableException(new HttpRequestException("The SSL connection could not be established.")),
+            _ => new LauncherPackageUnavailableException(new HttpRequestException(
+                "No such host is known. (bl-modern.ru:443)",
+                new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.HostNotFound))),
+        };
+    }
 
     private static void ShowFatalError(Exception exception)
     {
@@ -165,8 +201,66 @@ internal static class Program
 
     private static string BuildFatalUserMessage(Exception exception)
     {
+        return BuildFatalUserMessageCore(exception) + Environment.NewLine + Environment.NewLine +
+               "Если ничего не помогло — пришли в поддержку файл:" + Environment.NewLine +
+               BootstrapperErrorLogPath();
+    }
+
+    private static string BuildFatalUserMessageCore(Exception exception)
+    {
+        // Причина сетевого отказа лежит внутри обёртки LauncherPackageUnavailableException,
+        // поэтому разбираем её отдельно и до общего switch.
+        if (exception is LauncherPackageUnavailableException packageUnavailable)
+        {
+            if (packageUnavailable.InnerException is null)
+            {
+                return "На сервере не опубликован пакет лаунчера.\n\n" +
+                       "Это сбой на нашей стороне, а не на твоём компьютере. " +
+                       "Напиши в поддержку в Discord — мы починим и сообщим.";
+            }
+
+            return "Не удалось скачать лаунчер с bl-modern.ru.\n\n" +
+                   DescribeNetworkFailure(packageUnavailable.InnerException) + "\n\n" +
+                   "Что обычно помогает:\n" +
+                   "1. Проверь интернет — открой https://bl-modern.ru в браузере.\n" +
+                   "2. Если сайт открывается, а лаунчер нет — временно отключи антивирус и " +
+                   "брандмауэр или добавь BL-modern.exe в исключения.\n" +
+                   "3. Если сайт не открывается — включи VPN либо смени DNS на 1.1.1.1 или 8.8.8.8.\n" +
+                   "4. Запусти лаунчер ещё раз через несколько минут.";
+        }
+
+        // Windows не даёт запустить Launcher.App.exe: Smart App Control, AppLocker или WDAC.
+        // По саппорт-логам это вторая по частоте причина после «файл занят» (29 случаев из 32
+        // бандлов с логом бутстраппера), и раньше игрок видел английский текст исключения.
+        if (FindInner<System.ComponentModel.Win32Exception>(exception) is { NativeErrorCode: AppPolicyBlockedErrorCode })
+        {
+            return "Windows заблокировал запуск лаунчера политикой управления приложениями.\n\n" +
+                   "Это защита самой Windows, а не вирус в лаунчере. Что сделать:\n" +
+                   "1. Открой «Безопасность Windows» → «Управление приложениями и браузером» → " +
+                   "«Интеллектуальное управление приложениями» и переключи его в «Выключено».\n" +
+                   "2. Если пункта нет — он отключён политикой рабочего или учебного компьютера: " +
+                   "запусти лаунчер под личной учётной записью Windows.\n" +
+                   "3. После этого запусти BL-modern.exe ещё раз.";
+        }
+
+        // Single-file exe не смог поднять собственный рантайм — почти всегда антивирус выел
+        // распакованный временный каталог (6 случаев в саппорт-логах).
+        if (FindInner<FileNotFoundException>(exception) is { FileName: not null } missingAssembly &&
+            missingAssembly.FileName.Contains("PublicKeyToken", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Файлы лаунчера повреждены — антивирус удалил часть распакованных файлов.\n\n" +
+                   "1. Добавь BL-modern.exe в исключения антивируса.\n" +
+                   "2. Скачай BL-modern.exe заново с https://bl-modern.ru и запусти.";
+        }
+
         switch (exception)
         {
+            case UnauthorizedAccessException:
+                return "Нет прав на запись в папку установки.\n\n" +
+                       "Чаще всего это установка в корень диска (D:\\) или в системную папку. " +
+                       "Выбери отдельную папку, например D:\\BL-modern, и запусти установку заново. " +
+                       "Если папка выбрана давно — удали файл bootstrapper-state.json из " +
+                       "%LocalAppData%\\TerraFirmaGregModernLauncher, и лаунчер спросит папку снова.";
             case IOException ioException when ioException.Message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase)
                                               || ioException.Message.Contains("используется другим процессом", StringComparison.OrdinalIgnoreCase):
                 return "Лаунчер уже запущен, и его файлы заняты.\n\n" +
@@ -183,6 +277,31 @@ internal static class Program
             default:
                 return "При запуске лаунчера произошла ошибка:\n\n" + exception.Message;
         }
+    }
+
+    /// <summary>Человеческая расшифровка сетевого сбоя — чтобы игрок понимал, куда копать.</summary>
+    private static string DescribeNetworkFailure(Exception failure)
+    {
+        if (IsHostNotFound(failure))
+        {
+            return "Адрес bl-modern.ru не удалось разрешить (DNS). " +
+                   "Обычно это блокировка у провайдера или неправильный DNS.";
+        }
+
+        if (failure is TaskCanceledException)
+        {
+            return "Сервер не ответил вовремя — соединение обрывается или очень медленное.";
+        }
+
+        if (failure is HttpRequestException httpFailure)
+        {
+            return httpFailure.StatusCode is { } status
+                ? $"Сервер ответил ошибкой {(int)status}."
+                : "Соединение не установилось. Так бывает при блокировке у провайдера, " +
+                  "фильтрации HTTPS антивирусом или запрете в брандмауэре.";
+        }
+
+        return "Соединение прервалось: " + failure.Message;
     }
 
     private static bool IsHostNotFound(Exception exception)
@@ -203,6 +322,11 @@ internal static class Program
     // тот же telemetry.php, что и события Launcher.App.
     private static void TrySendCrashTelemetry(Exception exception)
     {
+        if (_previewErrorMode)
+        {
+            return;
+        }
+
         try
         {
             var (clientId, telemetryEnabled) = ReadTelemetryIdentity();
@@ -216,7 +340,10 @@ internal static class Program
                 ["exceptionType"] = exception.GetType().FullName,
                 ["site"] = ResolveCrashSite(exception),
                 ["message"] = SanitizeTelemetryText(exception.Message),
-                ["innerType"] = exception.InnerException?.GetType().FullName
+                ["innerType"] = exception.InnerException?.GetType().FullName,
+                ["innerMessage"] = SanitizeTelemetryText(exception.InnerException?.Message ?? string.Empty),
+                ["httpStatus"] = FindInner<HttpRequestException>(exception)?.StatusCode is { } code ? (int)code : null,
+                ["socketError"] = FindInner<System.Net.Sockets.SocketException>(exception)?.SocketErrorCode.ToString()
             };
 
             var envelope = new
@@ -324,21 +451,69 @@ internal static class Program
         return sanitized.Length <= 220 ? sanitized : sanitized[..220] + "...";
     }
 
+    private static T? FindInner<T>(Exception? exception) where T : Exception
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static string BootstrapperErrorLogPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TerraFirmaGregModernLauncher",
+            "bootstrapper-error.log");
+    }
+
     private static void TryWriteBootstrapperErrorLog(Exception exception)
     {
         try
         {
-            var logDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "TerraFirmaGregModernLauncher");
-            Directory.CreateDirectory(logDirectory);
-            var logPath = Path.Combine(logDirectory, "bootstrapper-error.log");
-            var entry = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {exception}{Environment.NewLine}{Environment.NewLine}";
+            var logPath = BootstrapperErrorLogPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+
+            // Лог читают люди из поддержки, поэтому кроме стека пишем версию, ОС и разобранную
+            // причину: по одному файлу должно быть понятно, наш это сбой или сеть игрока.
+            var entry = new StringBuilder()
+                .AppendLine($"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] bootstrapper {ResolveBootstrapperVersion()} on {Environment.OSVersion.VersionString}")
+                .AppendLine("diagnosis: " + BuildFatalUserMessageCore(exception).Replace("\n", " "))
+                .AppendLine(exception.ToString())
+                .AppendLine()
+                .ToString();
             File.AppendAllText(logPath, entry);
+
+            TrimErrorLog(logPath);
         }
         catch
         {
             // Логирование не должно само ронять процесс.
+        }
+    }
+
+    // Лог живёт вечно и растёт с каждым сбоем — держим только хвост, иначе игрок пришлёт
+    // в поддержку многомегабайтный файл.
+    private static void TrimErrorLog(string logPath)
+    {
+        try
+        {
+            var info = new FileInfo(logPath);
+            if (!info.Exists || info.Length <= 256 * 1024)
+            {
+                return;
+            }
+
+            var lines = File.ReadAllLines(logPath);
+            File.WriteAllLines(logPath, lines.Skip(lines.Length / 2));
+        }
+        catch
+        {
         }
     }
 
@@ -533,8 +708,14 @@ internal static class Program
             }
         }
 
-        var launcherUpdate = await TryGetLauncherUpdateAsync(httpClient, configuration)
-                             ?? throw new InvalidOperationException("Не удалось получить пакет лаунчера из манифеста.");
+        var (launcherUpdate, manifestFailure) = await TryGetLauncherUpdateWithReasonAsync(httpClient, configuration);
+        if (launcherUpdate is null)
+        {
+            // Раньше здесь бросался безликий InvalidOperationException, и настоящая причина
+            // (нет сети / 403 / таймаут / пустой манифест) терялась и в логе, и в телеметрии,
+            // и в окне ошибки. Теперь причина едет внутри исключения.
+            throw new LauncherPackageUnavailableException(manifestFailure);
+        }
 
         await RunWithProgressAsync(
             "Установка лаунчера",
@@ -848,16 +1029,27 @@ internal static class Program
 
     private static async Task<ResolvedLauncherUpdate?> TryGetLauncherUpdateAsync(HttpClient httpClient, LauncherConfiguration configuration)
     {
+        return (await TryGetLauncherUpdateWithReasonAsync(httpClient, configuration)).Update;
+    }
+
+    /// <summary>
+    /// То же, что <see cref="TryGetLauncherUpdateAsync"/>, но возвращает и причину отказа.
+    /// Failure = null и Update = null означает «манифест скачался, но пакета лаунчера в нём нет».
+    /// </summary>
+    private static async Task<(ResolvedLauncherUpdate? Update, Exception? Failure)> TryGetLauncherUpdateWithReasonAsync(
+        HttpClient httpClient,
+        LauncherConfiguration configuration)
+    {
         try
         {
-            return await TryGetLauncherUpdateCoreAsync(httpClient, configuration);
+            return (await TryGetLauncherUpdateCoreAsync(httpClient, configuration), null);
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or IOException or System.Net.Sockets.SocketException)
         {
             // Сеть/сервер недоступны (нет интернета, DNS, 503 и т.п.) — не валим бутстраппер.
             // Уже установленный лаунчер запустится оффлайн; если установки нет, вызывающий код
             // покажет понятное сообщение вместо тихого краша.
-            return null;
+            return (null, exception);
         }
     }
 
@@ -1109,6 +1301,17 @@ sealed class BootstrapperStateStore(string launcherName)
         return string.Concat(value.Select(character => invalid.Contains(character) ? '_' : character));
     }
 }
+
+/// <summary>
+/// Пакет лаунчера получить не удалось. InnerException = сетевая причина; null означает, что
+/// манифест скачался, но пакета лаунчера в нём нет (то есть сбой публикации на нашей стороне).
+/// </summary>
+sealed class LauncherPackageUnavailableException(Exception? reason)
+    : Exception(
+        reason is null
+            ? "В манифесте нет пакета лаунчера (launcher.version/packageUrl пустые)."
+            : "Не удалось получить манифест лаунчера: " + reason.Message,
+        reason);
 
 sealed class BootstrapperState
 {
