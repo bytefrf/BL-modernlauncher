@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -52,14 +52,14 @@ public sealed class RuntimeInstallService(HttpClient httpClient)
         // Полная автономия: если задан готовый Forge-рантайм и он ещё не установлен — скачиваем и
         // распаковываем его (versions/ + libraries/) ВМЕСТО запуска Forge-инсталлера. Тогда установка
         // не обращается к Forge maven вообще.
-        if (!IsForgeRuntimeComplete(root, versionJson) && !string.IsNullOrWhiteSpace(manifest.Runtime.PrebuiltRuntimeUrl))
+        if (!IsForgeRuntimeComplete(root, versionJson, manifest) && !string.IsNullOrWhiteSpace(manifest.Runtime.PrebuiltRuntimeUrl))
         {
             await InstallPrebuiltRuntimeAsync(root, manifest, ScaleProgress(progress, VanillaStart, ForgeEnd), cancellationToken);
         }
 
         await EnsureVanillaVersionAsync(root, manifest.Runtime, manifest.Modpack.MinecraftVersion, ScaleProgress(progress, VanillaStart, VanillaEnd), cancellationToken);
 
-        if (!IsForgeRuntimeComplete(root, versionJson))
+        if (!IsForgeRuntimeComplete(root, versionJson, manifest))
         {
             if (!manifest.Runtime.AutoInstallForge)
             {
@@ -82,11 +82,23 @@ public sealed class RuntimeInstallService(HttpClient httpClient)
     }
 
     // Forge считается установленным, только если есть version.json И все локально-генерируемые
-    // артефакты Forge (в version.json у них пустой url — их создаёт инсталлер: client-srg/extra,
-    // forge-client). Если хоть один отсутствует — установка неполная, её надо переустановить.
-    private static bool IsForgeRuntimeComplete(string root, string versionJsonPath)
+    // артефакты лоадера. Проверок две, потому что одной не хватает:
+    //   1) артефакты с ПУСТЫМ url в version.json — их создаёт инсталлер, мы их не качаем;
+    //   2) жёстко заданные jar-ы лоадера и пропатченного клиента.
+    // Вторая появилась после разбора саппорт-логов: в version.json Forge 1.20.1 (47.4.x) НЕТ НИ
+    // ОДНОГО артефакта с пустым url, а client-srg/client-extra/forge-client там не перечислены
+    // вовсе — Forge подставляет их через FML-аргументы. Из-за этого проверка №1 всегда говорила
+    // «установлено», самолечение не запускалось никогда, и игрок с побитой установкой бесконечно
+    // получал «Invalid paths argument, contained no existing paths» (37 бандлов от одного игрока
+    // за вечер).
+    private static bool IsForgeRuntimeComplete(string root, string versionJsonPath, ModpackManifest manifest)
     {
         if (!File.Exists(versionJsonPath))
+        {
+            return false;
+        }
+
+        if (!AreGeneratedLoaderArtifactsPresent(root, manifest))
         {
             return false;
         }
@@ -130,6 +142,67 @@ public sealed class RuntimeInstallService(HttpClient httpClient)
         catch
         {
             return true; // битый/нестандартный version.json — не ломаем запуск из-за самой проверки
+        }
+    }
+
+    /// <summary>
+    /// Проверяет jar-ы, которые Forge/NeoForge-инсталлер генерирует локально и которых нет
+    /// в <c>libraries</c> version.json. Именно их отсутствие роняет игру в FML ещё до логов.
+    /// Возвращает true, если проверить нечем (неизвестная версия лоадера) — проверка не должна
+    /// сама блокировать запуск.
+    /// </summary>
+    private static bool AreGeneratedLoaderArtifactsPresent(string root, ModpackManifest manifest)
+    {
+        var loaderVersion = (manifest.Modpack.LoaderVersion ?? string.Empty).Trim();
+        if (loaderVersion.Length == 0)
+        {
+            return true;
+        }
+
+        var neoForge = IsNeoForgeLoader(manifest);
+        var libraries = Path.Combine(root, "libraries");
+
+        // У Forge каталог версии — "<mc>-<loader>" (1.20.1-47.4.10), у NeoForge — просто "<loader>"
+        // (21.1.233). Манифест может уже содержать полную форму — тогда ничего не склеиваем.
+        var minecraftVersion = (manifest.Modpack.MinecraftVersion ?? string.Empty).Trim();
+        var loaderFolder = loaderVersion;
+        if (!neoForge && minecraftVersion.Length > 0 && !loaderVersion.StartsWith(minecraftVersion + "-", StringComparison.Ordinal))
+        {
+            loaderFolder = minecraftVersion + "-" + loaderVersion;
+        }
+
+        var loaderClientJar = neoForge
+            ? Path.Combine(libraries, "net", "neoforged", "neoforge", loaderFolder, $"neoforge-{loaderFolder}-client.jar")
+            : Path.Combine(libraries, "net", "minecraftforge", "forge", loaderFolder, $"forge-{loaderFolder}-client.jar");
+
+        if (!File.Exists(loaderClientJar))
+        {
+            return false;
+        }
+
+        // Пропатченный клиент лежит в libraries/net/minecraft/client/<версия-штамп>/, а штамп
+        // (1.20.1-20230612.114412) нам неоткуда взять — ищем маской. Проверяем только Forge:
+        // раскладка NeoForge отличается, а ложное «не установлено» загонит игрока в вечную
+        // переустановку — это хуже, чем не поймать редкий случай.
+        if (neoForge)
+        {
+            return true;
+        }
+
+        var clientRoot = Path.Combine(libraries, "net", "minecraft", "client");
+        if (!Directory.Exists(clientRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(clientRoot, "client-*-srg.jar", SearchOption.AllDirectories).Any()
+                   && Directory.EnumerateFiles(clientRoot, "client-*-extra.jar", SearchOption.AllDirectories).Any();
+        }
+        catch
+        {
+            return true; // не смогли прочитать каталог — не блокируем запуск из-за самой проверки
         }
     }
 
