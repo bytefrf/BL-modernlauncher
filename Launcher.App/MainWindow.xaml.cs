@@ -126,6 +126,8 @@ public partial class MainWindow : Window, IDisposable
     private void SupportButton_Click(object sender, RoutedEventArgs e) => OpenSupportWindow();
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void CloseButton_Click(object sender, RoutedEventArgs e) => MinimizeToTray("Лаунчер свернут в трей. Minecraft продолжит работать.");
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) => RememberWindowSize();
+
     private void Window_StateChanged(object sender, EventArgs e)
     {
         if (WindowState == WindowState.Maximized)
@@ -165,6 +167,10 @@ public partial class MainWindow : Window, IDisposable
 
         InitializeBackgroundSlideshow();
         _userSettings = UserSettings.Load(_configuration.GetUserSettingsPath());
+
+        // Настройки читаются уже после конструктора, где окну задан размер по умолчанию, —
+        // поэтому применяем сохранённый размер здесь, как только он стал известен.
+        ApplyResponsiveFixedWindowSize();
         LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
         EnsureTelemetryIdentity();
         _playerProfile = PlayerProfile.Load(_configuration.GetPlayerProfilePath());
@@ -474,18 +480,54 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    /// Ставит размер окна: сохранённый игроком, иначе подобранный от рабочей области.
+    /// </summary>
+    /// <remarks>
+    /// Раньше размер был жёстко фиксированным (Min = Max), и «правильную» цифру приходилось
+    /// угадывать за всех: одному мелко, другому во весь экран и тесно. Теперь окно тянется мышью,
+    /// а выбранный размер запоминается — спорить больше не о чем.
+    /// </remarks>
     private void ApplyResponsiveFixedWindowSize()
     {
         var workArea = SystemParameters.WorkArea;
-        var targetSize = GetForcedWindowSize() ?? SelectWindowSize(workArea.Width, workArea.Height);
+        var forced = GetForcedWindowSize();
+        var restored = forced is null
+            ? WindowSizeCalculator.Restore(_userSettings.WindowWidth, _userSettings.WindowHeight, workArea.Width, workArea.Height)
+            : null;
+
+        var targetSize = forced
+                         ?? (restored is null
+                             ? SelectWindowSize(workArea.Width, workArea.Height)
+                             : new System.Windows.Size(restored.Value.Width, restored.Value.Height));
+
+        MinWidth = WindowSizeCalculator.MinWidth;
+        MinHeight = WindowSizeCalculator.MinHeight;
+        MaxWidth = double.PositiveInfinity;
+        MaxHeight = double.PositiveInfinity;
         Width = targetSize.Width;
         Height = targetSize.Height;
-        MinWidth = targetSize.Width;
-        MaxWidth = targetSize.Width;
-        MinHeight = targetSize.Height;
-        MaxHeight = targetSize.Height;
         Left = workArea.Left + (workArea.Width - Width) / 2;
         Top = workArea.Top + (workArea.Height - Height) / 2;
+    }
+
+    /// <summary>Запоминает размер окна, чтобы в следующий раз открыть его таким же.</summary>
+    private void RememberWindowSize()
+    {
+        // Отладочный --window-size не должен затирать выбор игрока.
+        if (_configuration is null || GetForcedWindowSize() is not null || WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        if (Math.Abs(_userSettings.WindowWidth - Width) < 1 && Math.Abs(_userSettings.WindowHeight - Height) < 1)
+        {
+            return;
+        }
+
+        _userSettings.WindowWidth = Width;
+        _userSettings.WindowHeight = Height;
+        _userSettings.Save(_configuration.GetUserSettingsPath());
     }
 
     /// <summary>

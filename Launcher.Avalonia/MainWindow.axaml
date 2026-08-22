@@ -5,7 +5,7 @@
         x:DataType="vm:MainWindowViewModel"
         Title="TerraFirmaGreg Modern"
         Width="1180" Height="720"
-        CanResize="False"
+        CanResize="True"
         Background="{DynamicResource WindowBackgroundBrush}"
         WindowStartupLocation="CenterScreen">
 

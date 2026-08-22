@@ -1298,8 +1298,10 @@ if (args.Length >= 1 && args[0].Equals("--window-size", StringComparison.Ordinal
 
     // Рабочая область 1920x1080 за вычетом панели задач.
     var fullHd = WindowSizeCalculator.Select(1920, 1040);
-    Check("1080p: окно 1600x900", Math.Abs(fullHd.Width - 1600) < 1 && Math.Abs(fullHd.Height - 900) < 1, Show(fullHd));
-    Check("1080p: окно больше половины экрана", fullHd.Width * fullHd.Height > 1920 * 1080 * 0.65, Show(fullHd));
+    Check("1080p: окно 1440x810", Math.Abs(fullHd.Width - 1440) < 1 && Math.Abs(fullHd.Height - 810) < 1, Show(fullHd));
+    // Окно не должно ни теряться на экране, ни лезть в его края: 1600x900 на 1080p оказалось тесно.
+    var share = fullHd.Width * fullHd.Height / (1920.0 * 1080);
+    Check("1080p: окно занимает разумную долю экрана", share is > 0.5 and < 0.65, $"{share:P0}");
 
     // 2K и 4K: дальше потолка не растём.
     var qhd = WindowSizeCalculator.Select(2560, 1400);
@@ -1329,6 +1331,16 @@ if (args.Length >= 1 && args[0].Equals("--window-size", StringComparison.Ordinal
     var small = WindowSizeCalculator.Select(1366, 728);
     Check("на большем экране окно не меньше", fullHd.Width >= small.Width && fullHd.Height >= small.Height,
         $"{Show(small)} → {Show(fullHd)}");
+
+    // Сохранённый размер: подгоняется под текущий экран и не принимается, если он бессмысленный.
+    Check("сохранённый размер применяется как есть",
+        WindowSizeCalculator.Restore(1200, 700, 1920, 1040) is (1200, 700),
+        "1200x700");
+    Check("слишком большой сохранённый размер ужимается по экрану",
+        WindowSizeCalculator.Restore(3000, 2000, 1920, 1040) is (1920, 1040),
+        "ужат до рабочей области");
+    Check("огрызок игнорируется", WindowSizeCalculator.Restore(300, 200, 1920, 1040) is null, "null");
+    Check("пустой размер игнорируется", WindowSizeCalculator.Restore(0, 0, 1920, 1040) is null, "null");
 
     Console.WriteLine($"WINDOW_SIZE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
     Environment.ExitCode = failed == 0 ? 0 : 1;

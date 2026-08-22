@@ -10,6 +10,11 @@ public sealed class UserSettings
 
     /// <summary>Последние использованные ники — для быстрого переключения между аккаунтами.</summary>
     public List<string> RecentUsernames { get; set; } = [];
+
+    /// <summary>Размер окна лаунчера, выбранный игроком мышью. Ноль — подобрать автоматически.</summary>
+    public double WindowWidth { get; set; }
+
+    public double WindowHeight { get; set; }
     public string ClientId { get; set; } = Guid.NewGuid().ToString();
     public bool TelemetryEnabled { get; set; } = true;
     public string ThemeId { get; set; } = "verdant";

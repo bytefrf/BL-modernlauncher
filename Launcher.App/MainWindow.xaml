@@ -9,10 +9,11 @@
         Height="820"
         Width="1360"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded"
         StateChanged="Window_StateChanged"
+        SizeChanged="Window_SizeChanged"
         Background="{DynamicResource WindowBackgroundBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />

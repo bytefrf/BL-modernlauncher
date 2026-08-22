@@ -1,4 +1,4 @@
-namespace Launcher.App.Platform;
+﻿namespace Launcher.App.Platform;
 
 /// <summary>
 /// Подбор размера главного окна по рабочей области экрана. Раньше эта арифметика была продублирована
@@ -11,11 +11,11 @@ public static class WindowSizeCalculator
     public const double MinWidth = 980;
     public const double MinHeight = 560;
 
-    // Потолок подняли с 1440x810: на 1920x1080 окно занимало 56% площади экрана и выглядело мелким,
-    // вокруг оставались широкие поля. Дальше 1600x900 не растём намеренно — на 2K/4K окно во весь
-    // экран расползается пустотой, интерфейс на это не рассчитан.
-    public const double MaxWidth = 1600;
-    public const double MaxHeight = 900;
+    // Потолок 1600x900 на 1920x1080 давал окно почти во весь экран — тесно и неудобно. Вернулись
+    // к 1440x810 как размеру ПО УМОЛЧАНИЮ: спорить о «правильном» размере больше не нужно, потому
+    // что окно теперь тянется мышью и выбранный размер запоминается.
+    public const double MaxWidth = 1440;
+    public const double MaxHeight = 810;
 
     /// <summary>
     /// Размер подбирается ПЛАВНО от рабочей области, а не ступенями: раньше было четыре фиксированных
@@ -28,8 +28,6 @@ public static class WindowSizeCalculator
         var availableWidth = Math.Max(MinWidth, workWidth - 80);
         var availableHeight = Math.Max(MinHeight, workHeight - 80);
 
-        // Доля поднята с 0.78: на 1920x1080 старая формула упиралась в потолок 1440 и окно занимало
-        // чуть больше половины экрана. Теперь на 1080p получается ровно 1600x900.
         var width = Math.Clamp(workWidth * 0.86, MinWidth, MaxWidth);
         var height = Math.Clamp(width * 9 / 16, MinHeight, MaxHeight);
 
@@ -41,5 +39,25 @@ public static class WindowSizeCalculator
         }
 
         return (Math.Min(width, availableWidth), Math.Min(height, availableHeight));
+    }
+
+    /// <summary>
+    /// Проверяет сохранённый размер окна и вписывает его в текущую рабочую область.
+    /// Возвращает null, если сохранённого размера нет или он бессмысленный.
+    /// </summary>
+    /// <remarks>
+    /// Монитор мог смениться на меньший, а в настройках лежит размер от прошлого: без проверки окно
+    /// открылось бы за краями экрана, и часть кнопок стала бы недоступна.
+    /// </remarks>
+    public static (double Width, double Height)? Restore(double savedWidth, double savedHeight, double workWidth, double workHeight)
+    {
+        if (savedWidth < MinWidth || savedHeight < MinHeight)
+        {
+            return null;
+        }
+
+        return (
+            Math.Min(savedWidth, Math.Max(MinWidth, workWidth)),
+            Math.Min(savedHeight, Math.Max(MinHeight, workHeight)));
     }
 }

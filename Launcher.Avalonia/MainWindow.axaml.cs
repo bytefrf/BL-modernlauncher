@@ -132,6 +132,11 @@ public partial class MainWindow : Window
         {
             _configuration = LauncherConfiguration.Load(AppContext.BaseDirectory);
             _userSettings = UserSettings.Load(_configuration.GetUserSettingsPath());
+
+            // Настройки читаются уже после конструктора, где окну задан размер по умолчанию, —
+            // поэтому применяем сохранённый размер здесь, как только он стал известен.
+            ApplyResponsiveFixedWindowSize();
+            Resized += (_, _) => RememberWindowSize();
             _playerProfile = PlayerProfile.Load(_configuration.GetPlayerProfilePath());
             _soundService.Enabled = _userSettings.SoundEnabled;
 
@@ -574,6 +579,25 @@ public partial class MainWindow : Window
     /// с масштабом 150% окно получалось в полтора раза больше экрана, и правая часть
     /// интерфейса (новости, кнопки действий) уезжала за край.
     /// </remarks>
+    /// <summary>Запоминает размер окна, чтобы в следующий раз открыть его таким же.</summary>
+    private void RememberWindowSize()
+    {
+        // Отладочный --window-size не должен затирать выбор игрока.
+        if (_configuration is null || GetForcedWindowSize() is not null || WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        if (Math.Abs(_userSettings.WindowWidth - Width) < 1 && Math.Abs(_userSettings.WindowHeight - Height) < 1)
+        {
+            return;
+        }
+
+        _userSettings.WindowWidth = Width;
+        _userSettings.WindowHeight = Height;
+        _userSettings.Save(_configuration.GetUserSettingsPath());
+    }
+
     private void ApplyResponsiveFixedWindowSize()
     {
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
@@ -586,14 +610,24 @@ public partial class MainWindow : Window
         var workWidth = screen.WorkingArea.Width / scaling;
         var workHeight = screen.WorkingArea.Height / scaling;
 
-        var target = GetForcedWindowSize() ?? SelectWindowSize(workWidth, workHeight);
+        // Размер жёстко не фиксируем: окно тянется мышью, а выбранное значение запоминается.
+        // Паритет с WPF-версией.
+        var forced = GetForcedWindowSize();
+        var restored = forced is null
+            ? WindowSizeCalculator.Restore(_userSettings.WindowWidth, _userSettings.WindowHeight, workWidth, workHeight)
+            : null;
+
+        var target = forced
+                     ?? (restored is null
+                         ? SelectWindowSize(workWidth, workHeight)
+                         : new Size(restored.Value.Width, restored.Value.Height));
 
         // Ограничения ставим ДО размера: иначе окно сначала примет старое значение,
         // а Min/Max тут же его переопределят.
-        MinWidth = target.Width;
-        MaxWidth = target.Width;
-        MinHeight = target.Height;
-        MaxHeight = target.Height;
+        MinWidth = WindowSizeCalculator.MinWidth;
+        MinHeight = WindowSizeCalculator.MinHeight;
+        MaxWidth = double.PositiveInfinity;
+        MaxHeight = double.PositiveInfinity;
         Width = target.Width;
         Height = target.Height;
 
