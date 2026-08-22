@@ -55,6 +55,7 @@ internal static class Program
             if (!string.IsNullOrWhiteSpace(installDirectory))
             {
                 await TryDownloadLauncherUpdateForNextRunAsync(httpClient, configuration, installDirectory);
+                await TryDownloadBootstrapperUpdateAsync(httpClient, configuration, installDirectory);
             }
 
             return;
@@ -130,6 +131,10 @@ internal static class Program
         });
 
         StartBackgroundUpdater();
+
+        // В самом конце: лаунчер уже запущен, наш процесс сейчас завершится — самое безопасное
+        // время подменить собственный exe.
+        ApplyPendingBootstrapperUpdate(launcherInstallDirectory);
 
         void StartBackgroundUpdater()
         {
@@ -760,6 +765,169 @@ internal static class Program
             await DownloadLauncherPackageAsync(httpClient, launcherUpdate, zipPath);
             File.WriteAllText(versionPath, launcherUpdate.Version);
             File.WriteAllText(hashPath, launcherUpdate.Sha256 ?? string.Empty);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>
+    /// Докачивает новый <c>BL-modern.exe</c> в <c>.launcher-update</c>, если манифест предлагает
+    /// версию новее нашей. Применяется при следующем запуске — см. <see cref="ApplyPendingBootstrapperUpdate"/>.
+    /// </summary>
+    /// <remarks>
+    /// До этого бутстраппер не обновлялся НИКОГДА: его версии в манифесте не было, и у игрока
+    /// навсегда оставался тот файл, который он однажды скачал. Любая правка здесь доезжала только
+    /// до тех, кто перекачал exe вручную.
+    /// </remarks>
+    private static async Task TryDownloadBootstrapperUpdateAsync(HttpClient httpClient, LauncherConfiguration configuration, string installDirectory)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(configuration.ModpackManifestUrl))
+            {
+                return;
+            }
+
+            var manifest = await DownloadModpackManifestAsync(httpClient, configuration.ModpackManifestUrl);
+            var update = manifest.Launcher.Bootstrapper;
+            if (update is null ||
+                string.IsNullOrWhiteSpace(update.Version) ||
+                string.IsNullOrWhiteSpace(update.Url) ||
+                !IsRemoteVersionNewer(ResolveBootstrapperVersion(), update.Version))
+            {
+                return;
+            }
+
+            var pendingRoot = Path.Combine(installDirectory, ".launcher-update");
+            Directory.CreateDirectory(pendingRoot);
+            var exePath = Path.Combine(pendingRoot, "bootstrapper-update.exe");
+            var versionPath = Path.Combine(pendingRoot, "bootstrapper-update.version");
+
+            if (File.Exists(exePath) &&
+                File.Exists(versionPath) &&
+                File.ReadAllText(versionPath).Trim().Equals(update.Version, StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(update.Sha256) || HashesMatch(exePath, update.Sha256)))
+            {
+                return;
+            }
+
+            var uri = manifest.SourceUri is null ? new Uri(update.Url, UriKind.Absolute) : new Uri(manifest.SourceUri, update.Url);
+            var temp = exePath + ".part";
+            using (var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                await using var source = await response.Content.ReadAsStreamAsync();
+                await using var target = File.Create(temp);
+                await source.CopyToAsync(target);
+            }
+
+            // Подменять exe без проверки хэша нельзя: это исполняемый код, и качается он по сети.
+            if (!string.IsNullOrWhiteSpace(update.Sha256) && !HashesMatch(temp, update.Sha256))
+            {
+                File.Delete(temp);
+                return;
+            }
+
+            if (File.Exists(exePath))
+            {
+                File.Delete(exePath);
+            }
+
+            File.Move(temp, exePath);
+            File.WriteAllText(versionPath, update.Version);
+        }
+        catch
+        {
+            // Самообновление — удобство, а не условие работы.
+        }
+    }
+
+    /// <summary>
+    /// Подменяет собственный exe заранее скачанным. Вызывается в самом конце запуска: лаунчер уже
+    /// стартовал, и наш процесс вот-вот завершится, поэтому скрипту не придётся ничего ждать
+    /// и перезапускать. Новый файл вступит в силу при следующем запуске.
+    /// </summary>
+    private static void ApplyPendingBootstrapperUpdate(string installDirectory)
+    {
+        try
+        {
+            var pendingRoot = Path.Combine(installDirectory, ".launcher-update");
+            var exePath = Path.Combine(pendingRoot, "bootstrapper-update.exe");
+            var versionPath = Path.Combine(pendingRoot, "bootstrapper-update.version");
+            if (!File.Exists(exePath) || !File.Exists(versionPath))
+            {
+                return;
+            }
+
+            if (!IsRemoteVersionNewer(ResolveBootstrapperVersion(), File.ReadAllText(versionPath).Trim()))
+            {
+                SafeDeleteDirectoryEntry(exePath);
+                SafeDeleteDirectoryEntry(versionPath);
+                return;
+            }
+
+            var currentExe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(currentExe) || !File.Exists(currentExe))
+            {
+                return;
+            }
+
+            // Ярлык на рабочем столе ведёт на КОПИЮ в папке установки, а сам игрок мог запустить
+            // файл из «Загрузок». Обновляем оба, иначе один из них останется старым навсегда.
+            var targets = new List<string> { currentExe };
+            var installedCopy = Path.Combine(installDirectory, Path.GetFileName(currentExe));
+            if (!string.Equals(Path.GetFullPath(installedCopy), Path.GetFullPath(currentExe), StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(installedCopy))
+            {
+                targets.Add(installedCopy);
+            }
+
+            var scriptPath = Path.Combine(Path.GetTempPath(), $"apply-bootstrapper-{Guid.NewGuid():N}.ps1");
+            var copyLines = string.Join(Environment.NewLine, targets.Select(target =>
+                $"Copy-Item -LiteralPath $source -Destination '{EscapePowerShell(target)}' -Force -ErrorAction SilentlyContinue"));
+
+            var script = $$"""
+                $processIdToWait = {{Environment.ProcessId}}
+                $source = '{{EscapePowerShell(exePath)}}'
+
+                while (Get-Process -Id $processIdToWait -ErrorAction SilentlyContinue) {
+                    Start-Sleep -Milliseconds 300
+                }
+
+                Start-Sleep -Milliseconds 700
+                {{copyLines}}
+                Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath '{{EscapePowerShell(versionPath)}}' -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+                """;
+
+            File.WriteAllText(scriptPath, script);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{scriptPath}\"",
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WorkingDirectory = installDirectory
+            });
+        }
+        catch
+        {
+            // Не смогли подменить — работаем на текущей версии, ничего не ломается.
+        }
+    }
+
+    private static string EscapePowerShell(string value) => value.Replace("'", "''");
+
+    private static void SafeDeleteDirectoryEntry(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
         catch
         {
@@ -1732,6 +1900,19 @@ sealed class BootstrapperLauncherInfo
     public string SupportUrl { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
     public string PackageUrl { get; set; } = string.Empty;
+    public string Sha256 { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Обновление самого BL-modern.exe. Раздела может не быть — тогда бутстраппер себя не обновляет
+    /// и поведение остаётся прежним.
+    /// </summary>
+    public BootstrapperSelfUpdateInfo? Bootstrapper { get; set; }
+}
+
+sealed class BootstrapperSelfUpdateInfo
+{
+    public string Version { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
     public string Sha256 { get; set; } = string.Empty;
 }
 
