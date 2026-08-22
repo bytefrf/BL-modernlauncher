@@ -399,6 +399,36 @@
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
 
+                                        <!-- ГРАФИК ЗА МЕСЯЦ: паритет с WPF-версией. -->
+                                        <TextBlock x:Name="PlayTimelineHeader" Text="Как играл за месяц" FontSize="13"
+                                                   FontWeight="SemiBold" Margin="0,8,0,0"
+                                                   Foreground="{DynamicResource TextBrush}" />
+                                        <TextBlock x:Name="PlayTimelineCaption" FontSize="11" Margin="0,4,0,0"
+                                                   TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
+                                        <Border Margin="0,8,0,4" Height="74" CornerRadius="14" Padding="10,8"
+                                                Background="{DynamicResource CardAltBrush}"
+                                                BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                            <ItemsControl ItemsSource="{Binding PlayTimeline}" VerticalAlignment="Bottom">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <UniformGrid Rows="1" />
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:PlayTimelineItem">
+                                                        <Panel Height="58" Margin="1,0" ToolTip.Tip="{Binding Tooltip}">
+                                                            <!-- Прозрачная подложка: иначе в пустые дни нечем поймать курсор. -->
+                                                            <Rectangle Fill="Transparent" />
+                                                            <Rectangle VerticalAlignment="Bottom" RadiusX="2" RadiusY="2"
+                                                                       Height="{Binding BarHeight}"
+                                                                       Fill="{DynamicResource AccentBrush}"
+                                                                       Opacity="{Binding BarOpacity}" />
+                                                        </Panel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Border>
+
                                         <!-- ВРЕМЯ ПО СБОРКАМ -->
                                         <TextBlock x:Name="ProfileModpackHeader" Text="Время по сборкам" FontSize="13"
                                                    FontWeight="SemiBold" Margin="0,8,0,0" IsVisible="False"

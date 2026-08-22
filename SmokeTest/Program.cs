@@ -844,6 +844,66 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// График игровых сессий: SmokeTest --timeline
+if (args.Length >= 1 && args[0].Equals("--timeline", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var today = new DateTime(2026, 8, 22);
+
+    var empty = PlayTimelineBuilder.Build(null, today);
+    Check("без профиля график пустой, но не падает", empty.IsEmpty && empty.Days.Count == 30, empty.Caption);
+    Check("пустые дни всё равно в списке", empty.Days.All(day => !day.HasPlay), empty.Days.Count.ToString());
+
+    var profile = new PlayerProfile();
+    profile.RecordSession("tfgm", "TFGM", TimeSpan.FromHours(2), crashed: false, today);
+    profile.RecordSession("tfgm", "TFGM", TimeSpan.FromMinutes(30), crashed: false, today);
+    profile.RecordSession("tfgm", "TFGM", TimeSpan.FromHours(5), crashed: false, today.AddDays(-3));
+    // Старше окна графика — в сумму 30 дней попадать не должно.
+    profile.RecordSession("tfgm", "TFGM", TimeSpan.FromHours(9), crashed: false, today.AddDays(-45));
+
+    var timeline = PlayTimelineBuilder.Build(profile, today);
+    Check("две сессии за день сложились", profile.DailyPlaySeconds["2026-08-22"] == 9000, profile.DailyPlaySeconds["2026-08-22"].ToString());
+    Check("сессия старше 30 дней в график не попала", timeline.TotalSeconds == 9000 + 18000, timeline.TotalSeconds.ToString());
+    Check("активных дней ровно два", timeline.ActiveDays == 2, timeline.Caption);
+    Check("лучший день — тот, где 5 часов", timeline.BestDay!.Date == today.AddDays(-3), timeline.BestDay.Tooltip);
+
+    var last = timeline.Days[^1];
+    Check("последний столбик — сегодня", last.Date == today, last.Tooltip);
+    Check("самый крупный день занимает всю высоту",
+        Math.Abs(timeline.Days.Max(day => day.HeightFraction) - 1.0) < 0.0001,
+        timeline.Days.Max(day => day.HeightFraction).ToString("0.00"));
+
+    Check("склонение по числу дней", new[] { 1, 2, 5, 11, 21 }
+        .Select(count => PlayTimelineBuilder.Build(profile, today).Caption)
+        .All(caption => caption.Length > 0), timeline.Caption);
+
+    Check("часы и минуты человекочитаемы",
+        PlayTimelineDay.Format(9000) == "2 ч 30 мин" && PlayTimelineDay.Format(7200) == "2 ч" && PlayTimelineDay.Format(90) == "1 мин",
+        $"{PlayTimelineDay.Format(9000)} / {PlayTimelineDay.Format(7200)} / {PlayTimelineDay.Format(90)}");
+
+    // Файл профиля лежит у игрока и не должен расти бесконечно.
+    var longLived = new PlayerProfile();
+    for (var offset = 0; offset < PlayerProfile.DailyHistoryDays + 40; offset++)
+    {
+        longLived.RecordSession("tfgm", "TFGM", TimeSpan.FromMinutes(10), crashed: false, today.AddDays(-offset));
+    }
+
+    Check($"история обрезается до {PlayerProfile.DailyHistoryDays} дней",
+        longLived.DailyPlaySeconds.Count <= PlayerProfile.DailyHistoryDays + 1,
+        longLived.DailyPlaySeconds.Count.ToString());
+
+    Console.WriteLine($"TIMELINE_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Галерея скриншотов: SmokeTest --screenshots
 if (args.Length >= 1 && args[0].Equals("--screenshots", StringComparison.OrdinalIgnoreCase))
 {

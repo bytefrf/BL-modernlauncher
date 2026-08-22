@@ -1217,6 +1217,21 @@ public partial class MainWindow : Window
             _viewModel.ProfileStats.Add(new StatTileItem { Value = tile.Value, Caption = tile.Caption });
         }
 
+        const double chartHeight = 58;
+        var timeline = PlayTimelineBuilder.Build(profile, DateTime.Now);
+        this.FindControl<TextBlock>("PlayTimelineCaption")!.Text = timeline.Caption;
+        _viewModel.PlayTimeline.Clear();
+        foreach (var day in timeline.Days)
+        {
+            _viewModel.PlayTimeline.Add(new PlayTimelineItem
+            {
+                Tooltip = day.Tooltip,
+                // Минимальная высота у сыгранных дней — иначе короткая сессия неотличима от пропуска.
+                BarHeight = day.HasPlay ? Math.Max(4, day.HeightFraction * chartHeight) : 2,
+                BarOpacity = day.HasPlay ? 1.0 : 0.25
+            });
+        }
+
         var rows = ProfileViewBuilder.BuildModpackRows(profile);
         _viewModel.ProfileModpacks.Clear();
         foreach (var row in rows)

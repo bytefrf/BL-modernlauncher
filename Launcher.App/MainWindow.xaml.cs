@@ -2150,8 +2150,35 @@ public partial class MainWindow : Window, IDisposable
         UpdateProfileAvatar();
         RefreshProfileSummary();
         RefreshProfileStats();
+        RefreshPlayTimeline();
         RefreshProfileModpacks();
         RefreshAchievements();
+    }
+
+    /// <summary>
+    /// График «как играл за месяц». Статистика по дням копится в профиле — здесь она только
+    /// превращается в столбики.
+    /// </summary>
+    private void RefreshPlayTimeline()
+    {
+        if (PlayTimelinePanel is null || PlayTimelineCaption is null)
+        {
+            return;
+        }
+
+        const double chartHeight = 58;
+        var timeline = PlayTimelineBuilder.Build(_playerProfile, DateTime.Now);
+
+        PlayTimelineCaption.Text = timeline.Caption;
+        PlayTimelinePanel.ItemsSource = timeline.Days
+            .Select(day => new
+            {
+                day.Tooltip,
+                // Минимальная высота у сыгранных дней — иначе короткая сессия неотличима от пропуска.
+                BarHeight = day.HasPlay ? Math.Max(4, day.HeightFraction * chartHeight) : 2,
+                BarOpacity = day.HasPlay ? 1.0 : 0.25
+            })
+            .ToList();
     }
 
     private void UpdateProfileAvatar()

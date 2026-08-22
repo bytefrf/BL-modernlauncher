@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
@@ -16,6 +16,8 @@ public sealed class MainWindowViewModel
 
     public ObservableCollection<StatTileItem> ProfileStats { get; } = [];
 
+    public ObservableCollection<PlayTimelineItem> PlayTimeline { get; } = [];
+
     public ObservableCollection<ModpackTimeItem> ProfileModpacks { get; } = [];
 
     public ObservableCollection<AchievementItem> Achievements { get; } = [];
@@ -27,6 +29,16 @@ public sealed class StatTileItem
     public required string Value { get; init; }
 
     public required string Caption { get; init; }
+}
+
+/// <summary>Столбик графика «как играл за месяц».</summary>
+public sealed class PlayTimelineItem
+{
+    public required string Tooltip { get; init; }
+
+    public required double BarHeight { get; init; }
+
+    public required double BarOpacity { get; init; }
 }
 
 /// <summary>Строка «время по сборкам».</summary>

@@ -871,6 +871,35 @@
                                               </ItemsControl.ItemTemplate>
                                           </ItemsControl>
 
+                                          <!-- ГРАФИК ЗА МЕСЯЦ: данные копились и раньше, не хватало формы. -->
+                                          <TextBlock x:Name="PlayTimelineHeader" Text="Как играл за месяц" FontSize="13"
+                                                     FontWeight="SemiBold" Margin="0,8,0,0" />
+                                          <TextBlock x:Name="PlayTimelineCaption" FontSize="11" Margin="0,4,0,0"
+                                                     TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
+                                          <Border Margin="0,8,0,4" Height="74" CornerRadius="14" Padding="10,8"
+                                                  Background="{DynamicResource CardAltBrush}"
+                                                  BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                              <ItemsControl x:Name="PlayTimelinePanel" VerticalAlignment="Bottom">
+                                                  <ItemsControl.ItemsPanel>
+                                                      <ItemsPanelTemplate>
+                                                          <UniformGrid Rows="1" />
+                                                      </ItemsPanelTemplate>
+                                                  </ItemsControl.ItemsPanel>
+                                                  <ItemsControl.ItemTemplate>
+                                                      <DataTemplate>
+                                                          <Grid Height="58" Margin="1,0" ToolTip="{Binding Tooltip}">
+                                                              <!-- Подложка на всю высоту: иначе в пустые дни не за что зацепиться мышью. -->
+                                                              <Rectangle Fill="Transparent" />
+                                                              <Rectangle VerticalAlignment="Bottom" RadiusX="2" RadiusY="2"
+                                                                         Height="{Binding BarHeight}"
+                                                                         Fill="{DynamicResource AccentBrush}"
+                                                                         Opacity="{Binding BarOpacity}" />
+                                                          </Grid>
+                                                      </DataTemplate>
+                                                  </ItemsControl.ItemTemplate>
+                                              </ItemsControl>
+                                          </Border>
+
                                           <!-- ВРЕМЯ ПО СБОРКАМ -->
                                           <TextBlock x:Name="ProfileModpackHeader" Text="Время по сборкам" FontSize="13" FontWeight="SemiBold"
                                                      Margin="0,8,0,0" Visibility="Collapsed" />

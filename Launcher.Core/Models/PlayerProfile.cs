@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Launcher.App.Models;
@@ -35,6 +35,15 @@ public sealed class PlayerProfile
 
     /// <summary>Статистика по каждой сборке: id → показатели.</summary>
     public Dictionary<string, ModpackPlayStats> Modpacks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Сколько секунд сыграно в каждый день, ключ — дата в формате <c>yyyy-MM-dd</c> по местному времени.
+    /// </summary>
+    /// <remarks>
+    /// Профиль копил только итоги за всё время, поэтому показать «как я играл в этом месяце» было
+    /// нечем. Храним ограниченное окно: файл профиля лежит у игрока и не должен расти бесконечно.
+    /// </remarks>
+    public Dictionary<string, long> DailyPlaySeconds { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>Разблокированные ачивки: id → когда разблокирована (UTC).</summary>
     public Dictionary<string, DateTime> Achievements { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -99,7 +108,38 @@ public sealed class PlayerProfile
         stats.Launches++;
         stats.LastPlayedUtc = DateTime.UtcNow;
 
+        RecordDay(startedAtLocal, seconds);
         UpdateStreak(startedAtLocal);
+    }
+
+    /// <summary>Сколько дней истории держим в файле профиля.</summary>
+    public const int DailyHistoryDays = 120;
+
+    private void RecordDay(DateTime startedAtLocal, long seconds)
+    {
+        if (seconds <= 0)
+        {
+            return;
+        }
+
+        var key = startedAtLocal.Date.ToString("yyyy-MM-dd");
+        DailyPlaySeconds[key] = DailyPlaySeconds.TryGetValue(key, out var already) ? already + seconds : seconds;
+
+        if (DailyPlaySeconds.Count <= DailyHistoryDays)
+        {
+            return;
+        }
+
+        // Оставляем самые свежие даты, а не «всё новее порога от текущей записи»: сессии могут
+        // приходить не по порядку (перевод часов, правка файла руками), и тогда порог уезжает
+        // вместе с ними и не срабатывает вовсе. Ключи вида yyyy-MM-dd сравниваются как строки.
+        foreach (var stale in DailyPlaySeconds.Keys
+                     .OrderByDescending(day => day, StringComparer.Ordinal)
+                     .Skip(DailyHistoryDays)
+                     .ToList())
+        {
+            DailyPlaySeconds.Remove(stale);
+        }
     }
 
     private void UpdateStreak(DateTime startedAtLocal)
