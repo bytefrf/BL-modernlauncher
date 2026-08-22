@@ -1108,6 +1108,14 @@ if (args.Length >= 1 && args[0].Equals("--usernames", StringComparison.OrdinalIg
     var dirty = UsernameHistory.ForMenu(["  Allera  ", "", "allera", "StopKran"], "StopKran");
     Check("мусор и дубли из файла настроек отсеиваются", dirty is ["Allera"], string.Join(", ", dirty));
 
+    // Регресс из живого прогона: запоминался только НОВЫЙ ник, прежний терялся, и меню было
+    // пустым ровно тогда, когда оно нужнее всего — сразу после смены ника.
+    var beforeChange = UsernameHistory.Remember(null, "bytefg");
+    var afterChange = UsernameHistory.Remember(beforeChange, "Allera");
+    Check("после смены ника прежний доступен в меню",
+        UsernameHistory.ForMenu(afterChange, "Allera") is ["bytefg"],
+        string.Join(", ", UsernameHistory.ForMenu(afterChange, "Allera")));
+
     Console.WriteLine($"USERNAMES_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
     Environment.ExitCode = failed == 0 ? 0 : 1;
     return;

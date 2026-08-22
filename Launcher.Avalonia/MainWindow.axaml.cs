@@ -137,6 +137,7 @@ public partial class MainWindow : Window
 
             LauncherThemeBrushes.ApplyTheme(Resources, _userSettings.ThemeId);
             SetUsername(_userSettings.Username);
+            _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
             UpdateUsernameHistoryButton();
             ShowProfileBadge();
 
@@ -1097,15 +1098,21 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Сначала запоминаем ПРЕЖНИЙ ник, потом новый: иначе прежний терялся и в меню было пусто
+        // ровно тогда, когда оно нужнее всего — сразу после смены.
+        var history = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
         _userSettings.Username = value;
-        _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, value);
+        _userSettings.RecentUsernames = UsernameHistory.Remember(history, value);
         _userSettings.Save(_configuration.GetUserSettingsPath());
         SetUsername(value);
         this.FindControl<TextBlock>("ProfileAvatarTextBlock")!.Text = value[..1].ToUpperInvariant();
         UpdateUsernameHistoryButton();
     }
 
-    /// <summary>Кнопка истории бесполезна, пока переключаться не на что — прячем её.</summary>
+    /// <summary>
+    /// Кнопка истории видна всегда: скрытая кнопка неотличима от отсутствующей возможности.
+    /// Паритет с WPF-версией.
+    /// </summary>
     private void UpdateUsernameHistoryButton()
     {
         var button = this.FindControl<Button>("UsernameHistoryButton");
@@ -1114,18 +1121,27 @@ public partial class MainWindow : Window
             return;
         }
 
-        button.IsVisible = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username).Count > 0;
+        var count = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username).Count;
+        ToolTip.SetTip(button, count > 0 ? "Недавние ники" : "Здесь появятся ники, которыми ты уже играл");
     }
 
     private void UsernameHistoryButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var names = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username);
-        if (names.Count == 0 || sender is not Button button)
+        if (sender is not Button button)
         {
             return;
         }
 
+        var names = UsernameHistory.ForMenu(_userSettings.RecentUsernames, _userSettings.Username);
         var flyout = new MenuFlyout();
+
+        if (names.Count == 0)
+        {
+            flyout.Items.Add(new MenuItem { Header = "Других ников пока нет", IsEnabled = false });
+            flyout.ShowAt(button);
+            return;
+        }
+
         foreach (var name in names)
         {
             var item = new MenuItem { Header = name };

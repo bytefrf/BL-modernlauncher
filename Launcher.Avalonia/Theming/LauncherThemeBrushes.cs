@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Launcher.App.Theming;
@@ -89,9 +89,12 @@ public static class LauncherThemeBrushes
 
         // Стеклянные кисти выводим из цветов темы, чтобы glass перекрашивался вместе с темой:
         // заливка — затемнённые полупрозрачные тона панели/фона, грань — светлый приглушённый тон.
+        // Плотность подобрана по жалобе на профиль: при 0x59/0x8F сквозь карточку просвечивал
+        // фон-скриншот, и текст на светлых участках почти не читался. Стекло осталось стеклом,
+        // но фон под ним теперь приглушён.
         resources["GlassFillBrush"] = CreateVerticalGradient(
-            WithAlpha(theme.PanelAlt, 0x59),
-            WithAlpha(theme.WindowBackground, 0x8F));
+            WithAlpha(theme.PanelAlt, 0xC4),
+            WithAlpha(theme.WindowBackground, 0xE6));
         resources["GlassStrokeBrush"] = CreateVerticalGradient(
             WithAlpha(theme.Muted, 0x5A),
             WithAlpha(theme.Muted, 0x14));

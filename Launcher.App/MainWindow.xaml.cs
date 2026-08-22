@@ -176,6 +176,7 @@ public partial class MainWindow : Window, IDisposable
             UpdateUsernameIndicator();
         };
         UpdateUsernameIndicator();
+        _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
         UpdateUsernameHistoryButton();
         RefreshProfileUi();
         SetActiveTab(account: false);
@@ -1473,13 +1474,19 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
 
+        // Сначала запоминаем ПРЕЖНИЙ ник, потом новый. Иначе прежний терялся навсегда и в меню
+        // истории было пусто ровно тогда, когда оно нужнее всего — сразу после смены ника.
+        var history = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
         _userSettings.Username = GetUsername();
-        _userSettings.RecentUsernames = UsernameHistory.Remember(_userSettings.RecentUsernames, _userSettings.Username);
+        _userSettings.RecentUsernames = UsernameHistory.Remember(history, _userSettings.Username);
         _userSettings.Save(_configuration.GetUserSettingsPath());
         UpdateUsernameHistoryButton();
     }
 
-    /// <summary>Кнопка истории бесполезна, пока переключаться не на что — прячем её.</summary>
+    /// <summary>
+    /// Кнопка истории видна всегда. Скрытая кнопка неотличима от отсутствующей возможности:
+    /// игрок просто не узнаёт, что ники можно переключать.
+    /// </summary>
     private void UpdateUsernameHistoryButton()
     {
         if (UsernameHistoryButton is null)
@@ -1487,23 +1494,38 @@ public partial class MainWindow : Window, IDisposable
             return;
         }
 
-        UsernameHistoryButton.Visibility = UsernameHistory.ForMenu(_userSettings.RecentUsernames, GetUsername()).Count > 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        var count = UsernameHistory.ForMenu(_userSettings.RecentUsernames, GetUsername()).Count;
+        UsernameHistoryButton.ToolTip = count > 0
+            ? "Недавние ники"
+            : "Здесь появятся ники, которыми ты уже играл";
     }
 
     private void UsernameHistoryButton_Click(object sender, RoutedEventArgs e)
     {
         var names = UsernameHistory.ForMenu(_userSettings.RecentUsernames, GetUsername());
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            PlacementTarget = UsernameHistoryButton,
+            Style = (Style)FindResource("ThemedContextMenu")
+        };
+
+        var itemStyle = (Style)FindResource("ThemedMenuItem");
+
         if (names.Count == 0)
         {
+            menu.Items.Add(new System.Windows.Controls.MenuItem
+            {
+                Header = "Других ников пока нет",
+                IsEnabled = false,
+                Style = itemStyle
+            });
+            menu.IsOpen = true;
             return;
         }
 
-        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = UsernameHistoryButton };
         foreach (var name in names)
         {
-            var item = new System.Windows.Controls.MenuItem { Header = name };
+            var item = new System.Windows.Controls.MenuItem { Header = name, Style = itemStyle };
             item.Click += (_, _) =>
             {
                 UsernameTextBox.Text = name;

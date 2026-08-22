@@ -50,13 +50,56 @@
         <!-- Стеклянные (glassmorphism) ресурсы: полупрозрачная заливка, светлая грань сверху, мягкая тень.
              Нейтральны к теме — сквозь них читается фон-слайдшоу, а цветовые акценты дают тема и кнопки. -->
         <LinearGradientBrush x:Key="GlassFillBrush" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#592B3B32" Offset="0" />
-            <GradientStop Color="#73111A16" Offset="1" />
+            <GradientStop Color="#C42B3B32" Offset="0" />
+            <GradientStop Color="#E6111A16" Offset="1" />
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="GlassStrokeBrush" StartPoint="0,0" EndPoint="0,1">
             <GradientStop Color="#5CFFFFFF" Offset="0" />
             <GradientStop Color="#15FFFFFF" Offset="1" />
         </LinearGradientBrush>
+        <!-- Меню истории ников: системный ContextMenu светлый и выбивается из оформления. -->
+        <Style x:Key="ThemedContextMenu" TargetType="ContextMenu">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border CornerRadius="12" Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <StackPanel IsItemsHost="True" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemedMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Root" CornerRadius="8" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SoftButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DropShadowEffect x:Key="GlassShadow" BlurRadius="20" ShadowDepth="0" Color="#000000" Opacity="0.42" RenderingBias="Performance" />
 
         <Style TargetType="TextBlock">
