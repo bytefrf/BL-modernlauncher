@@ -896,7 +896,7 @@
                                                      FontWeight="SemiBold" Margin="0,8,0,0" />
                                           <TextBlock x:Name="PlayTimelineCaption" FontSize="11" Margin="0,4,0,0"
                                                      TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" />
-                                          <Border Margin="0,8,0,4" Height="74" CornerRadius="14" Padding="10,8"
+                                          <Border x:Name="PlayTimelineChart" Margin="0,8,0,4" Height="74" CornerRadius="14" Padding="10,8"
                                                   Background="{DynamicResource CardAltBrush}"
                                                   BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
                                               <ItemsControl x:Name="PlayTimelinePanel" VerticalAlignment="Bottom">

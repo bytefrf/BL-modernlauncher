@@ -2172,6 +2172,14 @@ public partial class MainWindow : Window, IDisposable
         var timeline = PlayTimelineBuilder.Build(_playerProfile, DateTime.Now);
 
         PlayTimelineCaption.Text = timeline.Caption;
+
+        // Пустая рамка без единого столбика выглядит как поломка — пока играть было нечего,
+        // показываем только подпись.
+        if (PlayTimelineChart is not null)
+        {
+            PlayTimelineChart.Visibility = timeline.IsEmpty ? Visibility.Collapsed : Visibility.Visible;
+        }
+
         PlayTimelinePanel.ItemsSource = timeline.Days
             .Select(day => new
             {

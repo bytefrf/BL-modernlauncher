@@ -1242,6 +1242,15 @@ public partial class MainWindow : Window
         const double chartHeight = 58;
         var timeline = PlayTimelineBuilder.Build(profile, DateTime.Now);
         this.FindControl<TextBlock>("PlayTimelineCaption")!.Text = timeline.Caption;
+
+        // Пустая рамка без единого столбика выглядит как поломка — пока играть было нечего,
+        // показываем только подпись.
+        var chart = this.FindControl<Border>("PlayTimelineChart");
+        if (chart is not null)
+        {
+            chart.IsVisible = !timeline.IsEmpty;
+        }
+
         _viewModel.PlayTimeline.Clear();
         foreach (var day in timeline.Days)
         {
