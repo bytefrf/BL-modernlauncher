@@ -844,6 +844,62 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// Совет по памяти: SmokeTest --memory
+// Раньше объём ОЗУ знала только телеметрия, а настройка памяти — нет. Мало памяти = вылет на
+// загрузке мира, слишком много = своп и фризы; обе крайности игрок видит как «лаунчер сломался».
+if (args.Length >= 1 && args[0].Equals("--memory", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    const long Gb = 1024;
+
+    var low = MemoryAdvisor.Evaluate(2048, 16 * Gb);
+    Check("2 ГБ — мало", low.Level == MemoryVerdictLevel.TooLow, low.Title);
+    Check("в тексте про мало есть и предупреждение про перебор",
+        low.Message.Contains("Больше — не значит лучше", StringComparison.Ordinal),
+        "обе крайности объяснены");
+
+    var exact = MemoryAdvisor.Evaluate(4096, 16 * Gb);
+    Check("ровно 4 ГБ уже не считается малым", exact.Level == MemoryVerdictLevel.Ok, exact.Level.ToString());
+
+    var normal = MemoryAdvisor.Evaluate(6144, 16 * Gb);
+    Check("6 ГБ на 16 ГБ ОЗУ — норма", normal.Level == MemoryVerdictLevel.Ok, normal.Level.ToString());
+
+    // Главное в верхней границе: она зависит от железа, а не от абсолютного числа.
+    var tooMuchWeak = MemoryAdvisor.Evaluate(7168, 8 * Gb);
+    Check("7 ГБ на машине с 8 ГБ — перебор", tooMuchWeak.Level == MemoryVerdictLevel.TooHigh, tooMuchWeak.Title);
+
+    var sameOnStrong = MemoryAdvisor.Evaluate(7168, 32 * Gb);
+    Check("те же 7 ГБ на 32 ГБ ОЗУ — норма", sameOnStrong.Level == MemoryVerdictLevel.Ok, sameOnStrong.Level.ToString());
+
+    var absurd = MemoryAdvisor.Evaluate(24576, 64 * Gb);
+    Check("24 ГБ игре не нужны даже на мощной машине", absurd.Level == MemoryVerdictLevel.TooHigh, absurd.Title);
+
+    // Рекомендация обязана быть пригодной к применению на любом железе.
+    foreach (var ram in new long?[] { null, 4 * Gb, 8 * Gb, 16 * Gb, 32 * Gb, 64 * Gb })
+    {
+        var recommended = MemoryAdvisor.Recommend(ram);
+        var verdict = MemoryAdvisor.Evaluate(recommended, ram);
+        Check($"рекомендация при ОЗУ {(ram is null ? "неизвестно" : ram / 1024 + " ГБ")} сама проходит проверку",
+            verdict.Level == MemoryVerdictLevel.Ok,
+            $"{recommended} МБ");
+    }
+
+    // Железо не определилось — предупреждать про перебор не по чему, но минимум всё равно работает.
+    var unknownLow = MemoryAdvisor.Evaluate(1024, null);
+    Check("без данных об ОЗУ нехватка всё равно ловится", unknownLow.Level == MemoryVerdictLevel.TooLow, unknownLow.Title);
+
+    Console.WriteLine($"MEMORY_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Состав саппорт-бандла: SmokeTest --support-bundle
 // Регресс из разбора логов: в бандл попадал самый свежий launcher-error-*.log, даже если ему
 // 25 дней. При разборе он выглядит уликой текущего обращения и уводит в сторону — у одного
@@ -874,8 +930,16 @@ if (args.Length >= 1 && args[0].Equals("--support-bundle", StringComparison.Ordi
         File.WriteAllText(oldForge, "старый лог установщика");
         File.SetLastWriteTimeUtc(oldForge, DateTime.UtcNow.AddDays(-21));
 
+        // Факты о сессии кладём те же, что и лаунчер при настоящем краше.
+        var facts = SupportLogService.BuildSessionFacts(
+            -1073741819,
+            TimeSpan.FromSeconds(42),
+            new CrashAnalysisResult("итог", "детали", "latest.log", null, "graphics_driver", "sig", "evidence",
+                HasCrashReport: false, ExitCodeDescription: "нарушение доступа к памяти", ExitCodeHex: "0xC0000005",
+                LogTail: "", HasHsErr: true));
+
         var package = await new SupportLogService(new HttpClient()).CreatePackageAsync(
-            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None);
+            root, string.Empty, "client", "tester", "1.3.5", "0.13.7", "Проверка", CancellationToken.None, null, facts);
 
         // Архив обязательно закрываем: имя бандла содержит время с точностью до секунды, и второй
         // вызов в ту же секунду попадёт в тот же файл.
@@ -914,6 +978,20 @@ if (args.Length >= 1 && args[0].Equals("--support-bundle", StringComparison.Ordi
             string.Join(", ", names2.Where(n => n.StartsWith("launcher/", StringComparison.Ordinal))));
 
         Check("контекст бандла на месте", names2.Contains("launcher-context.txt"), "launcher-context.txt");
+
+        // Ради этого всё и затевалось: код выхода должен быть виден прямо в бандле, а не только
+        // в телеметрии — иначе краши без крэш-репорта разбирать нечем.
+        using (var archive3 = System.IO.Compression.ZipFile.OpenRead(package.Path))
+        {
+            var entry = archive3.GetEntry("launcher-context.txt")!;
+            using var reader = new StreamReader(entry.Open());
+            var context = reader.ReadToEnd();
+            Check("код выхода попал в контекст", context.Contains("ExitCode: -1073741819"), "ExitCode");
+            Check("расшифровка кода на месте", context.Contains("0xC0000005") && context.Contains("нарушение доступа"), "ExitCodeHex + ExitCodeMeaning");
+            Check("признаки разбора на месте",
+                context.Contains("HasCrashReport: no") && context.Contains("HasHsErr: yes") && context.Contains("CrashCategory: graphics_driver"),
+                "HasCrashReport/HasHsErr/CrashCategory");
+        }
     }
     finally
     {

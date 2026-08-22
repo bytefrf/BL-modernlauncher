@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
@@ -182,7 +182,7 @@ public partial class SettingsWindow : Window
 
     private void Cancel_Click(object? sender, RoutedEventArgs e) => Close();
 
-    private void Save_Click(object? sender, RoutedEventArgs e)
+    private async void Save_Click(object? sender, RoutedEventArgs e)
     {
         if (!ValidateInstallPath())
         {
@@ -205,6 +205,26 @@ public partial class SettingsWindow : Window
             ResolutionWidth = ParseSize(this.FindControl<TextBox>("ResolutionWidthTextBox")!.Text, 1280),
             ResolutionHeight = ParseSize(this.FindControl<TextBox>("ResolutionHeightTextBox")!.Text, 720)
         };
+
+        // Про неудачное количество памяти объясняем прямо здесь: игрок только что двигал ползунок,
+        // и это единственный момент, когда совет ещё не выглядит придиркой. Паритет с WPF-версией.
+        var verdict = MemoryAdvisor.Evaluate(settings.MemoryMb, SystemInfoCollector.TryGetTotalRamMb());
+        if (verdict.NeedsAttention)
+        {
+            var dialog = new ConfirmWindow(
+                verdict.Title,
+                verdict.Title,
+                verdict.Message,
+                settings.ThemeId,
+                $"Поставить {verdict.RecommendedMb} МБ");
+
+            await dialog.ShowDialog(this);
+            if (dialog.Accepted)
+            {
+                settings.MemoryMb = verdict.RecommendedMb;
+                this.FindControl<Slider>("MemorySlider")!.Value = verdict.RecommendedMb;
+            }
+        }
 
         Result = settings;
         Close();

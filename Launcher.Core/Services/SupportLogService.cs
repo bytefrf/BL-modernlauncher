@@ -23,7 +23,8 @@ public sealed class SupportLogService(HttpClient httpClient)
         string modpackVersion,
         string errorTitle,
         CancellationToken cancellationToken = default,
-        DateTime? sessionStartedUtc = null)
+        DateTime? sessionStartedUtc = null,
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
     {
         installRoot = string.IsNullOrWhiteSpace(installRoot) || installRoot == "-"
             ? Path.Combine(LauncherPaths.GetApplicationDataRoot(), "ForgeLauncher")
@@ -41,7 +42,7 @@ public sealed class SupportLogService(HttpClient httpClient)
         await WriteTextEntryAsync(
             archive,
             "launcher-context.txt",
-            BuildContext(clientId, username, launcherVersion, modpackVersion, installRoot, errorTitle),
+            BuildContext(clientId, username, launcherVersion, modpackVersion, installRoot, errorTitle, sessionFacts),
             cancellationToken);
         includedFiles.Add("launcher-context.txt");
 
@@ -146,9 +147,10 @@ public sealed class SupportLogService(HttpClient httpClient)
         string launcherVersion,
         string modpackVersion,
         string installRoot,
-        string errorTitle)
+        string errorTitle,
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
     {
-        return new StringBuilder()
+        var builder = new StringBuilder()
             .AppendLine($"Created: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
             .AppendLine($"ClientId: {clientId}")
             .AppendLine($"Username: {username}")
@@ -156,8 +158,46 @@ public sealed class SupportLogService(HttpClient httpClient)
             .AppendLine($"ModpackVersion: {modpackVersion}")
             .AppendLine($"InstallRoot: {installRoot}")
             .AppendLine($"OS: {Environment.OSVersion.VersionString}")
-            .AppendLine($"Error: {errorTitle}")
-            .ToString();
+            .AppendLine($"Error: {errorTitle}");
+
+        // Код выхода игры и признаки разбора. Без них 88 бандлов из 388 (партия за август) были
+        // чёрным ящиком: ни крэш-репорта, ни hs_err, а код выхода лежал ТОЛЬКО в телеметрии,
+        // то есть при разборе бандла его было неоткуда взять.
+        if (sessionFacts is not null)
+        {
+            foreach (var fact in sessionFacts)
+            {
+                if (!string.IsNullOrWhiteSpace(fact.Value))
+                {
+                    builder.AppendLine($"{fact.Key}: {fact.Value}");
+                }
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Факты о завершившейся сессии для <c>launcher-context.txt</c>. Собираются в одном месте,
+    /// чтобы WPF и Avalonia клали в бандл одно и то же.
+    /// </summary>
+    public static IReadOnlyList<KeyValuePair<string, string>> BuildSessionFacts(
+        int exitCode,
+        TimeSpan runtime,
+        CrashAnalysisResult analysis)
+    {
+        return
+        [
+            new("ExitCode", exitCode.ToString()),
+            new("ExitCodeHex", analysis.ExitCodeHex),
+            new("ExitCodeMeaning", analysis.ExitCodeDescription),
+            new("RuntimeSeconds", ((int)runtime.TotalSeconds).ToString()),
+            new("CrashCategory", analysis.Category),
+            new("CrashSignature", analysis.Signature),
+            new("HasCrashReport", analysis.HasCrashReport ? "yes" : "no"),
+            new("HasHsErr", analysis.HasHsErr ? "yes" : "no"),
+            new("StaleArtifactIgnored", analysis.StaleCrashArtifactIgnored ? "yes" : "no")
+        ];
     }
 
     private static async Task WriteTextEntryAsync(ZipArchive archive, string entryName, string text, CancellationToken cancellationToken)

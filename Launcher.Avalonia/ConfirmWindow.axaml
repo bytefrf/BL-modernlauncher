@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Launcher.Avalonia.ConfirmWindow"
+        Title="Подтверждение"
+        Width="620" Height="420"
+        MinWidth="560" MinHeight="360"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,*">
+
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0" ColumnDefinitions="Auto,12,*,Auto">
+                <Border Width="24" Height="24" CornerRadius="6"
+                        Background="{DynamicResource WindowIconBackgroundBrush}"
+                        BorderBrush="{DynamicResource WindowIconBorderBrush}"
+                        BorderThickness="1" VerticalAlignment="Center">
+                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" Text="!" />
+                </Border>
+                <TextBlock Grid.Column="2" x:Name="TitleTextBlock" VerticalAlignment="Center"
+                           FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" Text="Подтверждение" />
+                <Button Grid.Column="3" Theme="{StaticResource TitleBarButton}" Click="DeclineButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="24" RowDefinitions="Auto,14,*,18,Auto">
+            <TextBlock Grid.Row="0" x:Name="HeadlineTextBlock" FontSize="18" FontWeight="SemiBold"
+                       TextWrapping="Wrap" Foreground="{DynamicResource TextBrush}" />
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="MessageTextBlock" TextWrapping="Wrap" FontSize="14"
+                           LineHeight="21" Foreground="{DynamicResource MutedBrush}" />
+            </ScrollViewer>
+
+            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,12,Auto">
+                <Button Grid.Column="1" x:Name="DeclineButton" MinWidth="150" Height="38"
+                        Click="DeclineButton_Click" Content="Оставить как есть" />
+                <Button Grid.Column="3" x:Name="AcceptButton" MinWidth="150" Height="38"
+                        Classes="accent" Click="AcceptButton_Click" Content="Исправить" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

@@ -65,6 +65,10 @@ public partial class MainWindow : Window, IDisposable
     private CatalogManifest? _catalog;
     private string _selectedModpackId = string.Empty;
     private UserSettings _userSettings = new();
+
+    // Про память предупреждаем один раз за запуск лаунчера: окно перед каждой игрой раздражало бы
+    // сильнее, чем помогало.
+    private bool _memoryWarningShown;
     private readonly DispatcherTimer _backgroundRotationTimer = new();
     private readonly DispatcherTimer _serverStatsTimer = new();
     private readonly Random _backgroundRandom = new();
@@ -537,6 +541,46 @@ public partial class MainWindow : Window, IDisposable
         await RunSafeAsync(() => PlayAsync(host));
     }
 
+    /// <summary>
+    /// Предупреждает про неудачное количество памяти перед запуском игры и предлагает исправить.
+    /// </summary>
+    /// <remarks>
+    /// Настройку памяти игроки почти не открывают, а значение по умолчанию подходит не всем: с
+    /// маленьким запасом игра падает на загрузке мира, с чрезмерным — начинается своп. И то и другое
+    /// выглядит как поломка лаунчера, поэтому ловим момент перед запуском, когда это ещё поправимо.
+    /// Играть не мешаем ни при каком ответе: значение памяти — выбор игрока.
+    /// </remarks>
+    private void WarnAboutMemoryIfNeeded()
+    {
+        if (_memoryWarningShown)
+        {
+            return;
+        }
+
+        var verdict = MemoryAdvisor.Evaluate(_userSettings.MemoryMb, SystemInfoCollector.TryGetTotalRamMb());
+        if (!verdict.NeedsAttention)
+        {
+            return;
+        }
+
+        _memoryWarningShown = true;
+        var answer = System.Windows.MessageBox.Show(
+            this,
+            verdict.Message + $"\n\nПоставить {verdict.RecommendedMb} МБ прямо сейчас?",
+            verdict.Title,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _userSettings.MemoryMb = verdict.RecommendedMb;
+        SaveUserSettings();
+        AppendLog($"Память для игры изменена на {verdict.RecommendedMb} МБ.");
+    }
+
     private async Task PlayAsync(string? quickPlayServer = null)
     {
         var launchAttemptId = Guid.NewGuid().ToString("N");
@@ -551,6 +595,7 @@ public partial class MainWindow : Window, IDisposable
         }
 
         SaveUserSettings();
+        WarnAboutMemoryIfNeeded();
         _ = TrackTelemetryAsync("play_clicked", new Dictionary<string, object?>
         {
             ["action"] = _primaryActionState.ToString().ToLowerInvariant(),
@@ -1344,7 +1389,11 @@ public partial class MainWindow : Window, IDisposable
     // Авто-отправка крэш-бандла без участия игрока: при краше игры сам собирает пакет логов
     // (latest.log/stderr/hs_err/crash-report) и шлёт на сервер. Так причину видно даже если игрок
     // не нажмёт «Отправить в поддержку». Уважает отключённую телеметрию.
-    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle, DateTime? sessionStartedUtc = null)
+    private async Task AutoSendCrashBundleAsync(
+        string installRoot,
+        string errorTitle,
+        DateTime? sessionStartedUtc = null,
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
     {
         if (!_userSettings.TelemetryEnabled)
         {
@@ -1367,7 +1416,8 @@ public partial class MainWindow : Window, IDisposable
                 modpackVersion,
                 errorTitle,
                 CancellationToken.None,
-                sessionStartedUtc);
+                sessionStartedUtc,
+                sessionFacts);
 
             var upload = await _supportLogService.UploadAsync(
                 SupportLogsUrl,
@@ -2749,7 +2799,11 @@ public partial class MainWindow : Window, IDisposable
                         ["logTail"] = analysis.LogTail
                     });
 
-                    _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})", startedAt);
+                    _ = AutoSendCrashBundleAsync(
+                        installRoot,
+                        $"Краш игры ({analysis.Category})",
+                        startedAt,
+                        SupportLogService.BuildSessionFacts(process.ExitCode, runtime, analysis));
 
                     // Игра успела запуститься, но потом упала — пользователю тоже нужен анализ краша.
                     await Dispatcher.InvokeAsync(() =>
@@ -2782,7 +2836,11 @@ public partial class MainWindow : Window, IDisposable
                 ["javaSource"] = javaSource
             });
 
-            _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})", startedAt);
+            _ = AutoSendCrashBundleAsync(
+                installRoot,
+                $"Ранний выход игры ({analysis.Category})",
+                startedAt,
+                SupportLogService.BuildSessionFacts(process.ExitCode, runtime, analysis));
 
             await Dispatcher.InvokeAsync(() =>
             {

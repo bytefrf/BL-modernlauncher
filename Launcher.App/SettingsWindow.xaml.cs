@@ -1,7 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Windows;
 using Launcher.App.Configuration;
 using Launcher.App.Models;
+using Launcher.App.Services;
 using Launcher.App.Theming;
 using WinForms = System.Windows.Forms;
 
@@ -85,9 +86,52 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        Settings = ReadFields();
+        var candidate = ReadFields();
+        if (!ConfirmMemoryOrFix(candidate))
+        {
+            return;
+        }
+
+        Settings = candidate;
         DialogResult = true;
         Close();
+    }
+
+    /// <summary>
+    /// Объясняет игроку, чем плохо выбранное количество памяти, и предлагает подходящее значение.
+    /// Возвращает false, если игрок решил вернуться к настройке.
+    /// </summary>
+    /// <remarks>
+    /// Обе крайности выглядят одинаково — «игра вылетает, лаунчер сломался». Мало памяти роняет
+    /// игру на загрузке мира; слишком много отбирает её у системы, и начинается своп. Поэтому
+    /// говорим словами и подставляем значение сами, а не оставляем игрока наедине с ползунком.
+    /// </remarks>
+    private bool ConfirmMemoryOrFix(UserSettings candidate)
+    {
+        var verdict = MemoryAdvisor.Evaluate(candidate.MemoryMb, SystemInfoCollector.TryGetTotalRamMb());
+        if (!verdict.NeedsAttention)
+        {
+            return true;
+        }
+
+        var recommended = SnapMemory(verdict.RecommendedMb);
+        var answer = System.Windows.MessageBox.Show(
+            this,
+            verdict.Message + $"\n\nПоставить {recommended} МБ?",
+            verdict.Title,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (answer != MessageBoxResult.Yes)
+        {
+            // «Нет» — игрок настаивает на своём значении. Настаивать в ответ не будем: настройка его.
+            return true;
+        }
+
+        MemorySlider.Value = recommended;
+        MemoryValueTextBlock.Text = recommended.ToString();
+        candidate.MemoryMb = recommended;
+        return true;
     }
 
     private bool ValidateInstallPathOrWarn()

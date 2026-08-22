@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -32,7 +32,12 @@ public static class SystemInfoCollector
         };
     }
 
-    private static long? TryGetTotalRamMb()
+    /// <summary>Общий объём ОЗУ в мегабайтах или null, если система не ответила.</summary>
+    /// <remarks>
+    /// Был приватным и питал только телеметрию: настройка памяти о железе игрока ничего не знала.
+    /// Теперь тем же числом пользуется <see cref="MemoryAdvisor"/>.
+    /// </remarks>
+    public static long? TryGetTotalRamMb()
     {
         if (!HostPlatform.IsWindows)
         {

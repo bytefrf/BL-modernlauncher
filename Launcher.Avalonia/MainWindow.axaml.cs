@@ -61,6 +61,9 @@ public partial class MainWindow : Window
     private CatalogManifest? _catalog;
     private string? _selectedModpackId;
     private PrimaryActionState _primaryActionState = PrimaryActionState.Play;
+
+    // Про память предупреждаем один раз за запуск лаунчера — как и в WPF-версии.
+    private bool _memoryWarningShown;
     private OptionalModsCatalog? _optionalModsCatalog;
     // Установка и запуск идут долго: пока они не закончились, повторное нажатие кнопки
     // запустило бы вторую установку в ту же папку.
@@ -1291,6 +1294,44 @@ public partial class MainWindow : Window
     /// <param name="quickPlayServer">
     /// Адрес сервера для немедленного подключения или <c>null</c> для обычного запуска.
     /// </param>
+    /// <summary>
+    /// Предупреждает про неудачное количество памяти перед запуском игры. Паритет с WPF-версией,
+    /// разница только в окне: системного MessageBox в Avalonia нет, поэтому своё
+    /// <see cref="ConfirmWindow"/>.
+    /// </summary>
+    private async Task WarnAboutMemoryIfNeededAsync()
+    {
+        if (_memoryWarningShown || _configuration is null)
+        {
+            return;
+        }
+
+        var verdict = MemoryAdvisor.Evaluate(_userSettings.MemoryMb, SystemInfoCollector.TryGetTotalRamMb());
+        if (!verdict.NeedsAttention)
+        {
+            return;
+        }
+
+        _memoryWarningShown = true;
+        var dialog = new ConfirmWindow(
+            verdict.Title,
+            verdict.Title,
+            verdict.Message,
+            _userSettings.ThemeId,
+            $"Поставить {verdict.RecommendedMb} МБ");
+
+        await dialog.ShowDialog(this);
+        if (!dialog.Accepted)
+        {
+            // Играть не мешаем ни при каком ответе: количество памяти — выбор игрока.
+            return;
+        }
+
+        _userSettings.MemoryMb = verdict.RecommendedMb;
+        _userSettings.Save(_configuration.GetUserSettingsPath());
+        SetStatus($"Память для игры изменена на {verdict.RecommendedMb} МБ.");
+    }
+
     private async Task StartGameAsync(string? quickPlayServer)
     {
         var button = this.FindControl<Button>("PlayButton")!;
@@ -1301,6 +1342,8 @@ public partial class MainWindow : Window
 
         _busy = true;
         button.IsEnabled = false;
+
+        await WarnAboutMemoryIfNeededAsync();
 
         // Один идентификатор на всю попытку запуска: по нему события установки, старта и краша
         // сшиваются в одну историю на стороне сервера.
@@ -1455,14 +1498,22 @@ public partial class MainWindow : Window
             {
                 // Игра успела запуститься и упала позже — разбор нужен так же, как при раннем выходе.
                 _ = TrackTelemetryAsync("game_session_crashed", BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime));
-                _ = AutoSendCrashBundleAsync(installRoot, $"Краш игры ({analysis.Category})", startedAt);
+                _ = AutoSendCrashBundleAsync(
+                    installRoot,
+                    $"Краш игры ({analysis.Category})",
+                    startedAt,
+                    SupportLogService.BuildSessionFacts(process.ExitCode, runtime, analysis));
             }
             else
             {
                 var properties = BuildCrashProperties(launchAttemptId, analysis, process.ExitCode, runtime);
                 properties["stage"] = "early_exit";
                 _ = TrackTelemetryAsync("launch_failed", properties);
-                _ = AutoSendCrashBundleAsync(installRoot, $"Ранний выход игры ({analysis.Category})", startedAt);
+                _ = AutoSendCrashBundleAsync(
+                    installRoot,
+                    $"Ранний выход игры ({analysis.Category})",
+                    startedAt,
+                    SupportLogService.BuildSessionFacts(process.ExitCode, runtime, analysis));
             }
 
             await Dispatcher.UIThread.InvokeAsync(async () =>
@@ -1533,7 +1584,11 @@ public partial class MainWindow : Window
     /// Отправляет пакет логов сразу после краша, не дожидаясь действий игрока: иначе причина
     /// известна только тому, кто нажмёт кнопку. Уважает отключённую телеметрию.
     /// </summary>
-    private async Task AutoSendCrashBundleAsync(string installRoot, string errorTitle, DateTime? sessionStartedUtc = null)
+    private async Task AutoSendCrashBundleAsync(
+        string installRoot,
+        string errorTitle,
+        DateTime? sessionStartedUtc = null,
+        IReadOnlyList<KeyValuePair<string, string>>? sessionFacts = null)
     {
         if (!_userSettings.TelemetryEnabled)
         {
@@ -1554,7 +1609,8 @@ public partial class MainWindow : Window
                 GetTelemetryModpackVersion(),
                 errorTitle,
                 CancellationToken.None,
-                sessionStartedUtc);
+                sessionStartedUtc,
+                sessionFacts);
 
             await supportLogService.UploadAsync(
                 SupportLogsUrl,
