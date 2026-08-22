@@ -1,0 +1,80 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.Avalonia.ViewModels"
+        x:Class="Launcher.Avalonia.ScreenshotsWindow"
+        Title="Скриншоты"
+        Width="900" Height="640"
+        MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Grid RowDefinitions="46,*">
+
+        <Border Grid.Row="0" x:Name="CustomTitleBar"
+                Background="{DynamicResource TitleBarBackgroundBrush}"
+                BorderBrush="{DynamicResource TitleBarBorderBrush}"
+                BorderThickness="0,0,0,1"
+                PointerPressed="TitleBar_PointerPressed">
+            <Grid Margin="14,0,10,0" ColumnDefinitions="Auto,12,*,Auto">
+                <Border Width="24" Height="24" CornerRadius="6"
+                        Background="{DynamicResource WindowIconBackgroundBrush}"
+                        BorderBrush="{DynamicResource WindowIconBorderBrush}"
+                        BorderThickness="1" VerticalAlignment="Center">
+                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" Text="◧" />
+                </Border>
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextBrush}" Text="Скриншоты" />
+                <Button Grid.Column="3" Theme="{StaticResource TitleBarButton}" Click="CloseButton_Click" Content="×" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="20" RowDefinitions="Auto,12,*,14,Auto">
+            <TextBlock x:Name="SummaryTextBlock" FontSize="13" TextWrapping="Wrap"
+                       Foreground="{DynamicResource MutedBrush}" Text="Ищем снимки…" />
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="ScreenshotsPanel">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ScreenshotViewModel">
+                            <Border Margin="0,0,12,12" CornerRadius="14" Padding="8"
+                                    Background="{DynamicResource CardBrush}"
+                                    BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                <StackPanel Width="240">
+                                    <Border CornerRadius="10" ClipToBounds="True" Height="135" Background="#22000000">
+                                        <Image Source="{Binding Preview}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <TextBlock Margin="2,8,2,0" FontSize="12" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextBrush}" Text="{Binding FileName}"
+                                               ToolTip.Tip="{Binding FileName}" />
+                                    <TextBlock Margin="2,2,2,0" FontSize="11"
+                                               Foreground="{DynamicResource MutedBrush}" Text="{Binding Caption}" />
+                                    <Grid Margin="0,8,0,0" ColumnDefinitions="*,8,Auto">
+                                        <Button Height="30" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center"
+                                                Click="OpenScreenshot_Click" Tag="{Binding Path}"
+                                                Content="Открыть" />
+                                        <Button Grid.Column="2" Height="30" Width="38"
+                                                HorizontalContentAlignment="Center"
+                                                Click="DeleteScreenshot_Click" Tag="{Binding Path}"
+                                                ToolTip.Tip="Удалить снимок" Content="✕" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto">
+                <Button Height="36" Padding="16,0" Click="OpenFolder_Click" Content="Открыть папку" />
+                <Button Grid.Column="2" Height="36" Padding="16,0" Click="CloseButton_Click" Content="Закрыть" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

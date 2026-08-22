@@ -1126,6 +1126,13 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ScreenshotsButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var installRoot = ModpackCatalogLogic.ResolveEffectiveInstallRoot(_configuration, _modpackManifest, _userSettings);
+        var window = new ScreenshotsWindow(installRoot, _userSettings.ThemeId);
+        await window.ShowDialog(this);
+    }
+
     private async void ChangeSkinButton_Click(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (!UsernameRules.IsValid(_userSettings.Username))

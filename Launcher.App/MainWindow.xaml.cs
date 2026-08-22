@@ -1891,6 +1891,16 @@ public partial class MainWindow : Window, IDisposable
         }
     }
 
+    private void ScreenshotsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new ScreenshotsWindow(GetEffectiveInstallRoot(), _userSettings.ThemeId)
+        {
+            Owner = this
+        };
+
+        window.ShowDialog();
+    }
+
     private void ChangeSkinButton_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureUsernameSelected())

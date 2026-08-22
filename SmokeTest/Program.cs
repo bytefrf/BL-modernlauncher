@@ -844,6 +844,68 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// Галерея скриншотов: SmokeTest --screenshots
+if (args.Length >= 1 && args[0].Equals("--screenshots", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    var root = Path.Combine(Path.GetTempPath(), "smoke-shots-" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        Check("без папки снимков список пуст, а не падает", ScreenshotGalleryService.List(root).Count == 0, root);
+
+        var folder = ScreenshotGalleryService.ResolveFolder(root);
+        Directory.CreateDirectory(folder);
+
+        // Порядок проверяем по времени записи, а не по имени файла.
+        var older = Path.Combine(folder, "2026-08-01_12.00.00.png");
+        var newer = Path.Combine(folder, "2026-08-20_18.30.00.png");
+        File.WriteAllBytes(older, [1, 2, 3]);
+        File.WriteAllBytes(newer, [4, 5, 6]);
+        File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddDays(-20));
+        File.SetLastWriteTimeUtc(newer, DateTime.UtcNow.AddMinutes(-5));
+
+        // Пустой файл остаётся, если игра упала во время сохранения снимка: превью на нём падает.
+        File.WriteAllBytes(Path.Combine(folder, "broken.png"), []);
+        // Посторонние файлы игры в этой же папке (например, .txt) в галерею попадать не должны.
+        File.WriteAllText(Path.Combine(folder, "readme.txt"), "не снимок");
+
+        var list = ScreenshotGalleryService.List(root);
+        Check("нашлись только настоящие снимки", list.Count == 2, string.Join(", ", list.Select(item => item.FileName)));
+        Check("новые сверху", list[0].FileName == "2026-08-20_18.30.00.png", list[0].FileName);
+        Check("пустой файл отброшен", list.All(item => item.SizeBytes > 0), "0 байт не показываем");
+        Check("подпись — дата съёмки", list[0].Caption.Length >= 10, list[0].Caption);
+
+        Check("удаление работает", ScreenshotGalleryService.TryDelete(newer) && !File.Exists(newer), "удалён");
+        Check("повторное удаление не падает", !ScreenshotGalleryService.TryDelete(newer), "уже нет файла");
+        Check("после удаления список короче", ScreenshotGalleryService.List(root).Count == 1, "остался 1");
+
+        // Ограничение на количество: галерея не должна превращаться в файловый менеджер.
+        for (var i = 0; i < ScreenshotGalleryService.MaxItems + 10; i++)
+        {
+            File.WriteAllBytes(Path.Combine(folder, $"shot{i}.png"), [1]);
+        }
+
+        Check($"показываем не больше {ScreenshotGalleryService.MaxItems}",
+            ScreenshotGalleryService.List(root).Count == ScreenshotGalleryService.MaxItems,
+            ScreenshotGalleryService.List(root).Count.ToString());
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch { }
+    }
+
+    Console.WriteLine($"SCREENSHOTS_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // Автопочинка после краша: SmokeTest --repair
 if (args.Length >= 1 && args[0].Equals("--repair", StringComparison.OrdinalIgnoreCase))
 {

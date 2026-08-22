@@ -368,6 +368,9 @@
                                                 <Button x:Name="ChangeSkinButton" Margin="0,10,0,0" Height="36"
                                                         Theme="{StaticResource SoftButton}" Click="ChangeSkinButton_Click"
                                                         Content="Сменить скин" ToolTip.Tip="Загрузить свой скин" />
+                                                <Button x:Name="ScreenshotsButton" Margin="0,8,0,0" Height="36"
+                                                        Theme="{StaticResource SoftButton}" Click="ScreenshotsButton_Click"
+                                                        Content="Скриншоты" ToolTip.Tip="Снимки из игры (F2)" />
                                             </StackPanel>
                                         </Grid>
 
