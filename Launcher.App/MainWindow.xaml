@@ -976,7 +976,11 @@
                                                               <ColumnDefinition Width="Auto" />
                                                           </Grid.ColumnDefinitions>
                                                           <StackPanel Grid.Column="0">
+                                                              <!-- Foreground задан ЯВНО: внутри DataTemplate неявный стиль TextBlock
+                                                                   не применяется, и текст оставался цветом по умолчанию — тёмным
+                                                                   на тёмной карточке. -->
                                                               <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                                                         Foreground="{DynamicResource TextBrush}"
                                                                          TextTrimming="CharacterEllipsis" />
                                                               <ProgressBar Height="5" Margin="0,6,0,0" Minimum="0" Maximum="100"
                                                                            Value="{Binding Percent, Mode=OneWay}"
@@ -985,7 +989,7 @@
                                                                            BorderThickness="0" />
                                                           </StackPanel>
                                                           <TextBlock Grid.Column="2" Text="{Binding TimeText}" FontSize="12" FontWeight="SemiBold"
-                                                                     VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" />
+                                                                     VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}" />
                                                       </Grid>
                                                   </DataTemplate>
                                               </ItemsControl.ItemTemplate>
@@ -1020,7 +1024,8 @@
                                                               ToolTip="{Binding Tooltip}">
                                                           <StackPanel>
                                                               <StackPanel Orientation="Horizontal">
-                                                                  <TextBlock Text="{Binding Icon}" FontSize="17" VerticalAlignment="Center" />
+                                                                  <TextBlock Text="{Binding Icon}" FontSize="17" VerticalAlignment="Center"
+                                                                             Foreground="{DynamicResource TextBrush}" />
                                                                   <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
                                                                              Margin="8,0,0,0" VerticalAlignment="Center"
                                                                              Foreground="{Binding TitleBrush}"
