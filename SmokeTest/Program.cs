@@ -844,6 +844,76 @@ if (args.Length >= 1 && args[0].Equals("--disk-space", StringComparison.OrdinalI
     return;
 }
 
+// Автопочинка после краша: SmokeTest --repair
+if (args.Length >= 1 && args[0].Equals("--repair", StringComparison.OrdinalIgnoreCase))
+{
+    var passed = 0;
+    var failed = 0;
+    void Check(string name, bool condition, string detail)
+    {
+        Console.WriteLine($"  [{(condition ? "OK  " : "FAIL")}] {name}: {detail}");
+        if (condition) { passed++; } else { failed++; }
+    }
+
+    static CrashAnalysisResult Analysis(string category, string repairTarget = "") => new(
+        "итог", "детали", "latest.log", null, category, "sig", "evidence",
+        HasCrashReport: true, ExitCodeDescription: "код", ExitCodeHex: "0x1",
+        LogTail: "", HasHsErr: false, StaleCrashArtifactIgnored: false, RepairTargetPath: repairTarget);
+
+    var root = Path.Combine(Path.GetTempPath(), "smoke-repair-" + Guid.NewGuid().ToString("N")[..8]);
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "config"));
+        var badConfig = Path.Combine(root, "config", "barrels_2012-server.toml");
+        File.WriteAllText(badConfig, string.Empty);
+
+        var plan = CrashRepairPlanner.Plan(Analysis("config_corrupted", Path.Combine("config", "barrels_2012-server.toml")), root);
+        Check("битый конфиг чинится", plan is { Kind: RepairKind.DeleteFile }, plan?.ButtonText ?? "плана нет");
+
+        var applied = CrashRepairPlanner.Apply(plan!);
+        Check("файл удалён", applied.Success && !File.Exists(badConfig), applied.Message);
+
+        // Файла уже нет — предлагать починку нечестно.
+        var gone = CrashRepairPlanner.Plan(Analysis("config_corrupted", Path.Combine("config", "barrels_2012-server.toml")), root);
+        Check("несуществующий файл не предлагается чинить", gone is null, gone?.ButtonText ?? "плана нет");
+
+        // Путь приходит из лога игры — за пределы папки установки выпускать нельзя.
+        var escape = CrashRepairPlanner.Plan(Analysis("config_corrupted", Path.Combine("..", "..", "windows", "system32", "drivers", "etc", "hosts")), root);
+        Check("выход за папку установки заблокирован", escape is null, escape?.Targets.FirstOrDefault() ?? "плана нет");
+
+        // Неполный Forge: сносим только загрузчик, моды и миры не трогаем.
+        Directory.CreateDirectory(Path.Combine(root, "versions", "1.20.1-forge-47.4.10"));
+        Directory.CreateDirectory(Path.Combine(root, "libraries", "net", "minecraftforge", "forge"));
+        Directory.CreateDirectory(Path.Combine(root, "libraries", "net", "minecraft", "client"));
+        Directory.CreateDirectory(Path.Combine(root, "mods"));
+        Directory.CreateDirectory(Path.Combine(root, "saves", "Мир"));
+        File.WriteAllText(Path.Combine(root, "mods", "mod.jar"), "jar");
+        File.WriteAllText(Path.Combine(root, "saves", "Мир", "level.dat"), "world");
+
+        var loaderPlan = CrashRepairPlanner.Plan(Analysis("forge_incomplete"), root);
+        Check("неполный Forge чинится", loaderPlan is { Kind: RepairKind.ReinstallLoader }, loaderPlan?.ButtonText ?? "плана нет");
+
+        var loaderApplied = CrashRepairPlanner.Apply(loaderPlan!);
+        Check("загрузчик снесён", loaderApplied.Success && !Directory.Exists(Path.Combine(root, "versions")), loaderApplied.Message);
+        Check("моды на месте", File.Exists(Path.Combine(root, "mods", "mod.jar")), "mods/mod.jar");
+        Check("мир на месте", File.Exists(Path.Combine(root, "saves", "Мир", "level.dat")), "saves/Мир/level.dat");
+
+        // Категории, где механической починки нет, предлагать её не должны.
+        foreach (var category in new[] { "mod_recipe_viewer", "graphics_driver", "java_heap_oom", "clean_exit", "unknown" })
+        {
+            Check($"«{category}» не предлагает починку", CrashRepairPlanner.Plan(Analysis(category), root) is null, category);
+        }
+    }
+    finally
+    {
+        try { Directory.Delete(root, true); } catch { }
+    }
+
+    Console.WriteLine($"REPAIR_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
+    Environment.ExitCode = failed == 0 ? 0 : 1;
+    return;
+}
+
 // История ников: SmokeTest --usernames
 if (args.Length >= 1 && args[0].Equals("--usernames", StringComparison.OrdinalIgnoreCase))
 {

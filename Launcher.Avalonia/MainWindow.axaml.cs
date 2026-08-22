@@ -1616,6 +1616,40 @@ public partial class MainWindow : Window
             info, logPath, _userSettings.ThemeId, () => SendSupportLogAsync(info, logPath));
 
         await dialog.ShowDialog(this);
+        await OfferCrashRepairAsync(analysis, installRoot);
+    }
+
+    /// <summary>
+    /// Предлагает починить то, что чинится механически: удалить битый конфиг мода или снести
+    /// неполный загрузчик. Раньше лаунчер называл файл и путь, а искать и удалять игрок должен был
+    /// сам — и половина обращений в поддержку была именно про «где эта папка».
+    /// </summary>
+    private async Task OfferCrashRepairAsync(CrashAnalysisResult analysis, string installRoot)
+    {
+        var neoForge = string.Equals(_modpackManifest?.Modpack.Loader, "neoforge", StringComparison.OrdinalIgnoreCase);
+        var plan = CrashRepairPlanner.Plan(analysis, installRoot, neoForge);
+        if (plan is null)
+        {
+            return;
+        }
+
+        var confirm = new ConfirmWindow(
+            "Починить автоматически?",
+            plan.ButtonText,
+            plan.Description,
+            _userSettings.ThemeId,
+            plan.ButtonText,
+            "Не надо");
+
+        await confirm.ShowDialog(this);
+        if (!confirm.Accepted)
+        {
+            return;
+        }
+
+        var result = CrashRepairPlanner.Apply(plan);
+        SetStatus(result.Message);
+        UpdatePrimaryActionButton();
     }
 
     /// <summary>

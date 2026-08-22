@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Launcher.App.Services;
@@ -396,7 +396,7 @@ public static class CrashAnalyzerService
         var finding = DetectFinding(crashText, exitCode, allowFallback: false)
                       ?? DetectFinding(combined, exitCode, allowFallback: true)!;
         var summary = RefineClasspathSummary(finding, installRoot);
-        summary = RefineConfigSummary(finding, summary, crashText, combined);
+        summary = RefineConfigSummary(finding, summary, crashText, combined, out var repairTarget);
         summary = RefineJavaVersionSummary(finding, summary, crashText, combined);
         var details = BuildDetails(exitCode, summary, latestLogPath, crashReportPath);
 
@@ -413,7 +413,8 @@ public static class CrashAnalyzerService
             "0x" + unchecked((uint)exitCode).ToString("X8"),
             TelemetrySanitizer.SanitizeMultiline(combined, 2000),
             !string.IsNullOrWhiteSpace(hsErrPath),
-            staleArtifactIgnored);
+            staleArtifactIgnored,
+            repairTarget);
     }
 
     // Запас на расхождение часов и на то, что crash-reports пишется с точностью до секунды.
@@ -526,7 +527,11 @@ public static class CrashAnalyzerService
     }
 
     private static string RefineConfigSummary(CrashFinding finding, string summary, string crashText, string combined)
+        => RefineConfigSummary(finding, summary, crashText, combined, out _);
+
+    private static string RefineConfigSummary(CrashFinding finding, string summary, string crashText, string combined, out string repairTarget)
     {
+        repairTarget = string.Empty;
         if (!string.Equals(finding.Category, "config_corrupted", StringComparison.Ordinal))
         {
             return summary;
@@ -548,6 +553,11 @@ public static class CrashAnalyzerService
         var folder = isServerConfig
             ? "saves\\<папка мира>\\serverconfig"
             : "config";
+
+        // Относительный путь внутри папки установки: по нему кнопка «Починить» удалит файл сама.
+        // Для конфигов типа SERVER точное имя мира неизвестно, поэтому чинить автоматически нечего —
+        // отдаём только те цели, в которых уверены.
+        repairTarget = isServerConfig ? string.Empty : Path.Combine("config", fileName);
 
         var text = $"Повреждён файл настроек мода — игра не может его прочитать и падает на запуске. " +
                    $"Удали файл {folder}\\{fileName} в папке со сборкой: игра создаст его заново. " +
@@ -907,4 +917,6 @@ public sealed record CrashAnalysisResult(
     string LogTail,
     bool HasHsErr,
     // true, если в папке лежал крэш-репорт (или hs_err) от ПРОШЛОЙ сессии и он намеренно не учитывался.
-    bool StaleCrashArtifactIgnored = false);
+    bool StaleCrashArtifactIgnored = false,
+    // Относительный путь внутри папки установки, который надо удалить, чтобы починить (если известен).
+    string RepairTargetPath = "");

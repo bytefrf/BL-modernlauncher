@@ -1516,6 +1516,38 @@ public partial class MainWindow : Window, IDisposable
         menu.IsOpen = true;
     }
 
+    /// <summary>
+    /// Предлагает починить то, что чинится механически: удалить битый конфиг мода или снести
+    /// неполный загрузчик. Раньше лаунчер называл файл и путь, а искать и удалять игрок должен был
+    /// сам — и заметная часть обращений в поддержку была именно про «где эта папка».
+    /// </summary>
+    private void OfferCrashRepair(CrashAnalysisResult analysis, string installRoot)
+    {
+        var neoForge = string.Equals(_modpackManifest?.Modpack.Loader, "neoforge", StringComparison.OrdinalIgnoreCase);
+        var plan = CrashRepairPlanner.Plan(analysis, installRoot, neoForge);
+        if (plan is null)
+        {
+            return;
+        }
+
+        var answer = System.Windows.MessageBox.Show(
+            this,
+            plan.Description,
+            "Починить автоматически?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var result = CrashRepairPlanner.Apply(plan);
+        AppendLog($"Починка: {result.Message}");
+        SetStatus(result.Message);
+        UpdatePrimaryActionButton();
+    }
+
     private void EnsureTelemetryIdentity()
     {
         if (string.IsNullOrWhiteSpace(_userSettings.ClientId))
@@ -2853,6 +2885,7 @@ public partial class MainWindow : Window, IDisposable
                         AppendLog($"Crash Assistant: {analysis.Summary}");
                         SetStatus("Minecraft crashed");
                         System.Windows.MessageBox.Show(this, analysis.Details, "Анализатор краша", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        OfferCrashRepair(analysis, installRoot);
                     });
                 }
 
@@ -2889,6 +2922,7 @@ public partial class MainWindow : Window, IDisposable
                 AppendLog($"Crash Assistant: {analysis.Summary}");
                 SetStatus("Minecraft crashed");
                 System.Windows.MessageBox.Show(this, analysis.Details, "Анализатор краша", MessageBoxButton.OK, MessageBoxImage.Warning);
+                OfferCrashRepair(analysis, installRoot);
             });
         }
         catch (Exception exception)
