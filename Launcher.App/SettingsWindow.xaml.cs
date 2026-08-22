@@ -115,16 +115,20 @@ public partial class SettingsWindow : Window
         }
 
         var recommended = SnapMemory(verdict.RecommendedMb);
-        var answer = System.Windows.MessageBox.Show(
-            this,
-            verdict.Message + $"\n\nПоставить {recommended} МБ?",
+        var dialog = new ConfirmWindow(
             verdict.Title,
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (answer != MessageBoxResult.Yes)
+            verdict.Title,
+            verdict.Message,
+            candidate.ThemeId,
+            $"Поставить {recommended} МБ")
         {
-            // «Нет» — игрок настаивает на своём значении. Настаивать в ответ не будем: настройка его.
+            Owner = this
+        };
+
+        dialog.ShowDialog();
+        if (!dialog.Accepted)
+        {
+            // «Оставить как есть» — игрок настаивает на своём значении. Настройка его, не спорим.
             return true;
         }
 

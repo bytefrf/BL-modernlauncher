@@ -1061,6 +1061,17 @@ if (args.Length >= 1 && args[0].Equals("--repair", StringComparison.OrdinalIgnor
         try { Directory.Delete(root, true); } catch { }
     }
 
+    // Окно разбора краша собирается общим кодом для обоих интерфейсов.
+    var crashInfo = CrashErrorInfoBuilder.Build(Analysis("graphics_driver"));
+    Check("у окна краша есть заголовок и итог", crashInfo.Title == "Игра вылетела" && crashInfo.Summary.Length > 0, crashInfo.Title);
+    Check("шаги не пустые", crashInfo.Actions.Count > 0, string.Join(" | ", crashInfo.Actions));
+    Check("технические детали содержат категорию", crashInfo.TechnicalDetails.Contains("graphics_driver"), "категория есть");
+
+    var emptyDetails = CrashErrorInfoBuilder.Build(new CrashAnalysisResult(
+        "итог", string.Empty, "latest.log", null, "unknown", "sig", "evidence",
+        HasCrashReport: false, ExitCodeDescription: "код", ExitCodeHex: "0x1", LogTail: "", HasHsErr: false));
+    Check("без деталей окно всё равно что-то советует", emptyDetails.Actions.Count > 0, emptyDetails.Actions[0]);
+
     Console.WriteLine($"REPAIR_RESULT={(failed == 0 ? "PASS" : "FAIL")} ok={passed} fail={failed}");
     Environment.ExitCode = failed == 0 ? 0 : 1;
     return;

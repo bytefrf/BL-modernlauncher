@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="using:System"
         x:Class="Launcher.Avalonia.ErrorWindow"
@@ -99,17 +99,21 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,10,Auto,10,Auto,10,Auto">
+            <Grid Grid.Row="4" ColumnDefinitions="*,Auto,10,Auto,10,Auto,10,Auto,10,Auto">
                 <TextBlock x:Name="SupportStatusTextBlock" Grid.Column="0"
                            VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
                            Foreground="{DynamicResource MutedBrush}" />
-                <Button x:Name="SendLogButton" Grid.Column="1" Width="150" Content="Отправить лог"
+                <!-- «Починить» появляется только когда лаунчер реально может что-то сделать сам. -->
+                <Button x:Name="RepairButton" Grid.Column="1" MinWidth="150" Content="Починить"
+                        IsVisible="False"
+                        Theme="{StaticResource PrimaryButton}" Click="RepairButton_Click" />
+                <Button x:Name="SendLogButton" Grid.Column="3" Width="150" Content="Отправить лог"
                         Theme="{StaticResource SoftButton}" Click="SendLogButton_Click" />
-                <Button Grid.Column="3" Width="140" Content="Скопировать"
+                <Button Grid.Column="5" Width="140" Content="Скопировать"
                         Theme="{StaticResource SoftButton}" Click="CopyButton_Click" />
-                <Button x:Name="OpenLogsButton" Grid.Column="5" Width="130" Content="Открыть логи"
+                <Button x:Name="OpenLogsButton" Grid.Column="7" Width="130" Content="Открыть логи"
                         Theme="{StaticResource SoftButton}" Click="OpenLogsButton_Click" />
-                <Button Grid.Column="7" Width="110" Content="Понятно"
+                <Button Grid.Column="9" Width="110" Content="Понятно"
                         Theme="{StaticResource PrimaryButton}" Click="CloseButton_Click" />
             </Grid>
         </Grid>

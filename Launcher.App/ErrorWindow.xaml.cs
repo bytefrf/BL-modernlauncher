@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Windows;
 using Launcher.App.Theming;
 
@@ -11,6 +11,8 @@ public partial class ErrorWindow : Window
     private readonly Func<Task<SupportLogSendResult>>? _sendLogAsync;
     private readonly string _themeId;
 
+    private Func<string>? _repairAction;
+
     public ErrorWindow(ErrorInfo errorInfo, string logPath, string themeId, Func<Task<SupportLogSendResult>>? sendLogAsync = null)
     {
         InitializeComponent();
@@ -21,6 +23,7 @@ public partial class ErrorWindow : Window
         LauncherThemeBrushes.ApplyTheme(Resources, _themeId);
 
         TitleTextBlock.Text = errorInfo.Title;
+
         SummaryTextBlock.Text = errorInfo.Summary;
         ActionsItemsControl.ItemsSource = errorInfo.Actions;
         TechnicalTextBox.Text = errorInfo.TechnicalDetails;
@@ -29,6 +32,29 @@ public partial class ErrorWindow : Window
             : $"Лог сохранен: {logPath}";
         OpenLogsButton.IsEnabled = !string.IsNullOrWhiteSpace(logPath) && Directory.Exists(Path.GetDirectoryName(logPath));
         SendLogButton.IsEnabled = _sendLogAsync is not null;
+    }
+
+    /// <summary>
+    /// Включает кнопку «Починить». Действие возвращает текст результата, который показывается
+    /// прямо в окне: игроку не нужен ещё один диалог поверх этого.
+    /// </summary>
+    public void EnableRepair(string buttonText, Func<string> repair)
+    {
+        _repairAction = repair;
+        RepairButton.Content = buttonText;
+        RepairButton.Visibility = Visibility.Visible;
+    }
+
+    private void RepairButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_repairAction is null)
+        {
+            return;
+        }
+
+        RepairButton.IsEnabled = false;
+        SupportStatusTextBlock.Text = _repairAction();
+        _repairAction = null;
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)

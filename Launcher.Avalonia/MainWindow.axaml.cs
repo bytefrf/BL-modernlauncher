@@ -1719,61 +1719,28 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task ShowCrashWindowAsync(CrashAnalysisResult analysis, string installRoot)
     {
-        // Details — готовый текст анализатора: раскладываем его на строки-шаги, чтобы окно
-        // выглядело как обычный разбор ошибки, а не как простыня.
-        var actions = analysis.Details
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(line => !line.Equals(analysis.Summary, StringComparison.Ordinal))
-            .ToArray();
-
-        var info = new ErrorInfo(
-            "Игра вылетела",
-            analysis.Summary,
-            actions.Length > 0 ? actions : ["Отправь лог в поддержку — разберёмся по нему."],
-            $"Категория: {analysis.Category}{Environment.NewLine}" +
-            $"Код выхода: {analysis.ExitCodeDescription}{Environment.NewLine}" +
-            $"Найдено: {analysis.Evidence}{Environment.NewLine}{Environment.NewLine}" +
-            analysis.LogTail);
-
-        var logPath = analysis.CrashReportPath ?? analysis.LatestLogPath;
+        // Сборка ErrorInfo — общая с WPF (CrashErrorInfoBuilder): раньше она была своя у каждого
+        // интерфейса и успевала разъехаться.
+        var info = CrashErrorInfoBuilder.Build(analysis);
+        var logPath = CrashErrorInfoBuilder.ResolveLogPath(analysis);
         var dialog = new ErrorWindow(
             info, logPath, _userSettings.ThemeId, () => SendSupportLogAsync(info, logPath));
 
-        await dialog.ShowDialog(this);
-        await OfferCrashRepairAsync(analysis, installRoot);
-    }
-
-    /// <summary>
-    /// Предлагает починить то, что чинится механически: удалить битый конфиг мода или снести
-    /// неполный загрузчик. Раньше лаунчер называл файл и путь, а искать и удалять игрок должен был
-    /// сам — и половина обращений в поддержку была именно про «где эта папка».
-    /// </summary>
-    private async Task OfferCrashRepairAsync(CrashAnalysisResult analysis, string installRoot)
-    {
+        // Кнопка «Починить» встроена в это же окно, чтобы поверх не вылезал ещё один диалог.
         var neoForge = string.Equals(_modpackManifest?.Modpack.Loader, "neoforge", StringComparison.OrdinalIgnoreCase);
         var plan = CrashRepairPlanner.Plan(analysis, installRoot, neoForge);
-        if (plan is null)
+        if (plan is not null)
         {
-            return;
+            dialog.EnableRepair(plan.ButtonText, () =>
+            {
+                var result = CrashRepairPlanner.Apply(plan);
+                SetStatus(result.Message);
+                UpdatePrimaryActionButton();
+                return result.Message;
+            });
         }
 
-        var confirm = new ConfirmWindow(
-            "Починить автоматически?",
-            plan.ButtonText,
-            plan.Description,
-            _userSettings.ThemeId,
-            plan.ButtonText,
-            "Не надо");
-
-        await confirm.ShowDialog(this);
-        if (!confirm.Accepted)
-        {
-            return;
-        }
-
-        var result = CrashRepairPlanner.Apply(plan);
-        SetStatus(result.Message);
-        UpdatePrimaryActionButton();
+        await dialog.ShowDialog(this);
     }
 
     /// <summary>

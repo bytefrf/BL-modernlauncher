@@ -160,6 +160,36 @@ public partial class MainWindow : Window, IDisposable
         WindowTitleTextBlock.Text = _configuration.LauncherName;
         ServerTitleTextBlock.Text = _configuration.LauncherName;
 
+        // Показ окна разбора краша без настоящего краша: проверять его вид иначе можно только
+        // дождавшись живого вылета игры.
+        if (Environment.GetCommandLineArgs().Any(argument => argument.Equals("--test-crash-window", StringComparison.OrdinalIgnoreCase)))
+        {
+            var demo = new CrashAnalysisResult(
+                "Minecraft быстро завершился после запуска.",
+                string.Join(Environment.NewLine,
+                    "Minecraft быстро завершился после запуска.",
+                    string.Empty,
+                    "Что найдено:",
+                    "- Повреждён файл настроек мода — игра не может его прочитать и падает на запуске. " +
+                    "Удали файл config\\barrels_2012-server.toml в папке со сборкой: игра создаст его заново.",
+                    string.Empty,
+                    "Код завершения: 1"),
+                Path.Combine(GetEffectiveInstallRoot(), "logs", "latest.log"),
+                null,
+                "config_corrupted",
+                "demo",
+                "ConfigLoadingException",
+                HasCrashReport: false,
+                ExitCodeDescription: "1",
+                ExitCodeHex: "0x00000001",
+                LogTail: "демонстрационный хвост лога",
+                HasHsErr: false,
+                StaleCrashArtifactIgnored: false,
+                RepairTargetPath: Path.Combine("config", "barrels_2012-server.toml"));
+
+            _ = Dispatcher.InvokeAsync(() => ShowCrashWindow(demo, GetEffectiveInstallRoot()), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
         if (Environment.GetCommandLineArgs().Any(argument => argument.Equals("--test-crash", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException("Тестовая ошибка лаунчера: проверка окна ошибки, записи лога и кнопки отправки.");
@@ -608,14 +638,18 @@ public partial class MainWindow : Window, IDisposable
         }
 
         _memoryWarningShown = true;
-        var answer = System.Windows.MessageBox.Show(
-            this,
-            verdict.Message + $"\n\nПоставить {verdict.RecommendedMb} МБ прямо сейчас?",
+        var dialog = new ConfirmWindow(
             verdict.Title,
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+            verdict.Title,
+            verdict.Message,
+            _userSettings.ThemeId,
+            $"Поставить {verdict.RecommendedMb} МБ")
+        {
+            Owner = this
+        };
 
-        if (answer != MessageBoxResult.Yes)
+        dialog.ShowDialog();
+        if (!dialog.Accepted)
         {
             return;
         }
@@ -1585,35 +1619,43 @@ public partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Предлагает починить то, что чинится механически: удалить битый конфиг мода или снести
-    /// неполный загрузчик. Раньше лаунчер называл файл и путь, а искать и удалять игрок должен был
-    /// сам — и заметная часть обращений в поддержку была именно про «где эта папка».
+    /// Показывает разбор краша тем же окном, что и ошибки лаунчера.
     /// </summary>
-    private void OfferCrashRepair(CrashAnalysisResult analysis, string installRoot)
+    /// <remarks>
+    /// Раньше здесь был системный MessageBox: голый текст в окне, не имеющем ничего общего с
+    /// оформлением лаунчера, без «открыть логи» и «отправить в поддержку». Avalonia-версия давно
+    /// показывала нормальное окно — теперь и WPF. Кнопка «Починить» встроена в него же, чтобы
+    /// поверх не вылезал ещё один системный диалог.
+    /// </remarks>
+    private void ShowCrashWindow(CrashAnalysisResult analysis, string installRoot)
     {
+        var info = CrashErrorInfoBuilder.Build(analysis);
+        var logPath = CrashErrorInfoBuilder.ResolveLogPath(analysis);
+        var window = new ErrorWindow(info, logPath, _userSettings.ThemeId, () => SendSupportLogAsync(info, logPath))
+        {
+            Owner = this
+        };
+
         var neoForge = string.Equals(_modpackManifest?.Modpack.Loader, "neoforge", StringComparison.OrdinalIgnoreCase);
         var plan = CrashRepairPlanner.Plan(analysis, installRoot, neoForge);
-        if (plan is null)
+
+        // В лог пишем всегда: если игрок ждал кнопку «Починить», а её нет, по логу видно почему —
+        // не та категория, файла уже нет или путь ведёт за пределы папки установки.
+        AppendLog($"Починка: {(plan is null ? "нечего чинить" : plan.ButtonText)} (корень {installRoot})");
+
+        if (plan is not null)
         {
-            return;
+            window.EnableRepair(plan.ButtonText, () =>
+            {
+                var result = CrashRepairPlanner.Apply(plan);
+                AppendLog($"Починка: {result.Message}");
+                SetStatus(result.Message);
+                UpdatePrimaryActionButton();
+                return result.Message;
+            });
         }
 
-        var answer = System.Windows.MessageBox.Show(
-            this,
-            plan.Description,
-            "Починить автоматически?",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-
-        if (answer != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        var result = CrashRepairPlanner.Apply(plan);
-        AppendLog($"Починка: {result.Message}");
-        SetStatus(result.Message);
-        UpdatePrimaryActionButton();
+        window.ShowDialog();
     }
 
     private void EnsureTelemetryIdentity()
@@ -3059,8 +3101,7 @@ public partial class MainWindow : Window, IDisposable
                     {
                         AppendLog($"Crash Assistant: {analysis.Summary}");
                         SetStatus("Minecraft crashed");
-                        System.Windows.MessageBox.Show(this, analysis.Details, "Анализатор краша", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        OfferCrashRepair(analysis, installRoot);
+                        ShowCrashWindow(analysis, installRoot);
                     });
                 }
 
@@ -3096,8 +3137,7 @@ public partial class MainWindow : Window, IDisposable
             {
                 AppendLog($"Crash Assistant: {analysis.Summary}");
                 SetStatus("Minecraft crashed");
-                System.Windows.MessageBox.Show(this, analysis.Details, "Анализатор краша", MessageBoxButton.OK, MessageBoxImage.Warning);
-                OfferCrashRepair(analysis, installRoot);
+                ShowCrashWindow(analysis, installRoot);
             });
         }
         catch (Exception exception)

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -19,6 +19,7 @@ public partial class ErrorWindow : Window
     private readonly ErrorInfo _errorInfo;
     private readonly string _logPath;
     private readonly Func<Task<SupportLogSendResult>>? _sendLogAsync;
+    private Func<string>? _repairAction;
 
     public ErrorWindow() : this(
         new ErrorInfo("Ошибка", string.Empty, [], string.Empty), string.Empty, null, null)
@@ -82,6 +83,31 @@ public partial class ErrorWindow : Window
         {
             BeginMoveDrag(e);
         }
+    }
+
+    /// <summary>
+    /// Включает кнопку «Починить». Результат показывается прямо в окне: игроку не нужен ещё один
+    /// диалог поверх этого. Паритет с WPF-версией.
+    /// </summary>
+    public void EnableRepair(string buttonText, Func<string> repair)
+    {
+        _repairAction = repair;
+        var button = this.FindControl<Button>("RepairButton")!;
+        button.Content = buttonText;
+        button.IsVisible = true;
+    }
+
+    private void RepairButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_repairAction is null)
+        {
+            return;
+        }
+
+        var button = this.FindControl<Button>("RepairButton")!;
+        button.IsEnabled = false;
+        this.FindControl<TextBlock>("SupportStatusTextBlock")!.Text = _repairAction();
+        _repairAction = null;
     }
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
